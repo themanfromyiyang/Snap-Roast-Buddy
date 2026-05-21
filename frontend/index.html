@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Snap Roast Buddy 小票排版 Demo</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="control-pane" aria-label="输入与控制">
+        <div class="brand-lockup">
+          <p class="eyebrow">Snap Roast Buddy</p>
+          <h1>图片到热敏纸小票</h1>
+          <a class="debug-link" href="./debug.html">查看调试面板</a>
+        </div>
+
+        <section class="step-card">
+          <div class="step-title">
+            <span>1</span>
+            <h2>上传图片，分析内容</h2>
+          </div>
+          <input id="imageUpload" type="file" accept="image/*" />
+          <div class="image-examples" id="imageExamples" aria-label="示例图片"></div>
+          <div class="image-preview">
+            <img id="imagePreview" alt="待分析图片预览" />
+          </div>
+          <button class="secondary-action" type="button" id="analyzeImageButton">分析图片内容</button>
+          <p class="step-status" id="imageStatus" data-state="ready">请选择示例图或上传图片。</p>
+        </section>
+
+        <section class="step-card">
+          <div class="step-title">
+            <span>2</span>
+            <h2>编辑描述，三分类排版</h2>
+          </div>
+          <label for="photoDescription">图片描述 / 可手动编辑</label>
+          <textarea id="photoDescription" spellcheck="false"></textarea>
+          <div class="examples-row" id="examples" aria-label="文字范例"></div>
+          <div class="control-grid">
+            <label>
+              <span>模式</span>
+              <select id="mode">
+                <option value="auto">自动分类</option>
+                <option value="receipt">强制小票式</option>
+                <option value="big_text">强制横向大字</option>
+                <option value="pixel_expression">强制像素表情</option>
+              </select>
+            </label>
+            <label>
+              <span>吐槽强度</span>
+              <select id="roastLevel">
+                <option value="normal">正常</option>
+                <option value="gentle">温和</option>
+                <option value="spicy">更辣</option>
+              </select>
+            </label>
+          </div>
+          <button class="secondary-action" type="button" id="classifyButton">进行三分类</button>
+          <p class="step-status" id="classificationStatus" data-state="ready">等待图片描述。</p>
+          <div class="result-meta">
+            <div>
+              <span class="meta-label">分类结果</span>
+              <strong id="classificationType">等待分类</strong>
+            </div>
+            <div>
+              <span class="meta-label">Confidence</span>
+              <strong id="classificationConfidence">-</strong>
+            </div>
+          </div>
+          <p class="reason" id="classificationReason"></p>
+        </section>
+
+        <section class="step-card">
+          <div class="step-title">
+            <span>3</span>
+            <h2>生成评价与小票排版</h2>
+          </div>
+          <button class="primary-action" type="button" id="generateButton">生成 AI 小票</button>
+          <p class="api-status" id="apiStatus" data-state="ready"></p>
+
+          <div class="ai-card">
+            <span class="meta-label">AI 评价</span>
+            <p id="aiComment"></p>
+          </div>
+
+          <div class="result-meta">
+            <div>
+              <span class="meta-label">Layout</span>
+              <strong id="layoutType">receipt</strong>
+            </div>
+            <div>
+              <span class="meta-label">Canvas</span>
+              <strong id="heightReadout">384px x auto</strong>
+            </div>
+          </div>
+          <p class="reason" id="reason"></p>
+        </section>
+      </section>
+
+      <section class="preview-pane" aria-label="小票预览">
+        <div class="preview-toolbar">
+          <div>
+            <p class="eyebrow">58mm thermal preview</p>
+            <h2>固定宽度，长度随内容增长</h2>
+          </div>
+        </div>
+
+        <div class="paper-stage">
+          <div class="paper-shadow">
+            <div class="paper-teeth" aria-hidden="true"></div>
+            <div id="receiptPaper" class="receipt-paper"></div>
+            <div class="paper-feed" aria-hidden="true"></div>
+          </div>
+        </div>
+
+        <details class="text-details">
+          <summary>纯文本预览</summary>
+          <pre id="textPreview"></pre>
+        </details>
+      </section>
+    </main>
+
+    <script type="module" src="./dist/app.js"></script>
+  </body>
+</html>

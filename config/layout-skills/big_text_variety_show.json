@@ -1,0 +1,16 @@
+{
+  "name": "big_text_variety_show",
+  "layoutType": "big_text",
+  "description": "适合综艺字幕、强吐槽、大字爆梗的横向排版。",
+  "triggerKeywords": ["糊", "裁掉", "太近", "太远", "主体不明", "背景抢戏", "离谱", "非常小"],
+  "tone": "normal",
+  "layoutRules": {
+    "maxHeadlineChars": 12,
+    "useLargeCenteredText": true,
+    "useThickSeparators": true,
+    "preferShortPunchline": true,
+    "allowCharacterSpacing": true
+  },
+  "contentSlots": ["topLabel", "headline", "subHeadline", "oneLineRoast", "tinyAdvice"],
+  "visualMotifs": [">>> 紧急播报 <<<", "!!! 构图警告 !!!", ">>> 现场判定 <<<", "=== 友情事故 ==="]
+}

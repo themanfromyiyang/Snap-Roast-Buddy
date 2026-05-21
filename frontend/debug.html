@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Snap Roast Buddy 调试面板</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="debug-shell">
+      <header class="debug-header">
+        <div>
+          <p class="eyebrow">Snap Roast Buddy Debug</p>
+          <h1>生成内容调试面板</h1>
+        </div>
+        <a class="debug-link" href="./index.html">返回小票生成器</a>
+      </header>
+
+      <section class="debug-grid">
+        <div class="debug-panel">
+          <h2>测试输入</h2>
+          <textarea id="debugDescription" spellcheck="false"></textarea>
+          <div class="control-grid">
+            <label>
+              <span>模式</span>
+              <select id="debugMode">
+                <option value="auto">自动判断</option>
+                <option value="receipt">小票式</option>
+                <option value="big_text">横向大字</option>
+                <option value="pixel_expression">像素表情</option>
+              </select>
+            </label>
+            <label>
+              <span>吐槽强度</span>
+              <select id="debugRoastLevel">
+                <option value="normal">正常</option>
+                <option value="gentle">温和</option>
+                <option value="spicy">更辣</option>
+              </select>
+            </label>
+          </div>
+          <button class="primary-action" type="button" id="debugRefresh">刷新分析</button>
+        </div>
+
+        <div class="debug-panel">
+          <h2>当前 System Prompt</h2>
+          <select id="promptSelect"></select>
+          <pre id="promptView"></pre>
+        </div>
+
+        <div class="debug-panel">
+          <h2>照片分析 PhotoAnalysis</h2>
+          <pre id="analysisView"></pre>
+        </div>
+
+        <div class="debug-panel">
+          <h2>排版结果 LayoutDocument</h2>
+          <pre id="layoutView"></pre>
+        </div>
+
+        <div class="debug-panel wide">
+          <h2>Layout Skills</h2>
+          <div id="skillsView" class="debug-list"></div>
+        </div>
+
+        <div class="debug-panel wide">
+          <h2>像素表情 Pixel Faces</h2>
+          <div id="facesView" class="face-grid"></div>
+        </div>
+
+        <div class="debug-panel wide">
+          <h2>SVG 预览</h2>
+          <div class="debug-svg-stage">
+            <div id="debugSvg"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="./dist/debug.js"></script>
+  </body>
+</html>

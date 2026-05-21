@@ -1,0 +1,19 @@
+{
+  "name": "snap-roast-buddy-layout",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "demo": "node --import tsx examples/demo.ts",
+    "build:frontend": "esbuild frontend/src/app.ts frontend/src/debug.ts --bundle --format=esm --platform=browser --outdir=frontend/dist",
+    "dev": "node backend/server.mjs",
+    "serve": "node backend/server.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "esbuild": "^0.27.1",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
