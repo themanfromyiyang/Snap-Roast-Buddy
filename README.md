@@ -77,6 +77,37 @@ SILICONFLOW_VISION_MODEL=zai-org/GLM-4.6V
 
 浏览器不会直接持有 API key。前端请求后端，后端再调用模型。
 
+## 部署到 Vercel
+
+项目已经包含 `vercel.json` 和 `api/` serverless functions。
+
+Vercel 项目设置建议：
+
+```txt
+Build Command: npm run build:frontend
+Output Directory: frontend
+Install Command: npm install
+```
+
+需要在 Vercel Environment Variables 里配置：
+
+```env
+SILICONFLOW_API_KEY=YOUR_API_KEY
+SILICONFLOW_BASE_URL=https://api.siliconflow.cn/v1
+SILICONFLOW_MODEL=Pro/zai-org/GLM-4.7
+SILICONFLOW_VISION_MODEL=zai-org/GLM-4.6V
+```
+
+线上接口：
+
+```txt
+/api/analyze-image
+/api/classify-layout
+/api/roast
+/api/debug/prompts
+/api/debug/skills
+```
+
 ## 后端接口
 
 ```txt

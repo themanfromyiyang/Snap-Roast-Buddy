@@ -1,0 +1,14 @@
+node_modules/
+.npm-cache/
+.env
+.env.local
+.env.*.local
+.git/
+
+skill/
+hardware/
+examples/
+docs/
+
+*.log
+coverage/
