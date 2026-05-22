@@ -1,10 +1,12 @@
 # Snap Roast Buddy
 
-一个“图片 -> 图片描述 -> 排版三分类 -> AI 评价 -> 58mm 热敏纸排版预览”的前后端 demo。
+一个“图片/文字 -> AI 评价与热敏纸排版预览”的前后端 demo，也支持直接把图片转成白底黑线的二值漫画线稿。
 
 ## 当前生成流程
 
 ```txt
+文字排版流程：
+
 1. 上传图片或选择示例图片
    -> 后端调用视觉模型 Pro/moonshotai/Kimi-K2.6
    -> 得到中文图片描述
@@ -16,9 +18,15 @@
 3. 生成有趣评价并排版
    -> 后端生成 AI 评价
    -> 前端使用 packages/layout 生成小票 SVG 预览
+
+图片直出流程：
+
+1. 上传图片或选择示例图片
+2. 模式选择 pixel_doodle
+3. 后端直接调用图像编辑模型，把原图转成白底黑线的二值漫画线稿
 ```
 
-也可以跳过图片上传，直接编辑文字描述再生成。
+文字排版可以跳过图片上传，直接编辑文字描述再生成。pixel_doodle 不需要先分析图片内容，也不需要先转成文本。
 
 ## 项目结构
 
@@ -73,6 +81,7 @@ SILICONFLOW_API_KEY=YOUR_API_KEY
 SILICONFLOW_BASE_URL=https://api.siliconflow.cn/v1
 SILICONFLOW_MODEL=Pro/zai-org/GLM-4.7
 SILICONFLOW_VISION_MODEL=Pro/moonshotai/Kimi-K2.6
+SILICONFLOW_IMAGE_EDIT_MODEL=Qwen/Qwen-Image-Edit-2509
 ```
 
 浏览器不会直接持有 API key。前端请求后端，后端再调用模型。
@@ -96,6 +105,7 @@ SILICONFLOW_API_KEY=YOUR_API_KEY
 SILICONFLOW_BASE_URL=https://api.siliconflow.cn/v1
 SILICONFLOW_MODEL=Pro/zai-org/GLM-4.7
 SILICONFLOW_VISION_MODEL=Pro/moonshotai/Kimi-K2.6
+SILICONFLOW_IMAGE_EDIT_MODEL=Qwen/Qwen-Image-Edit-2509
 ```
 
 线上接口：
@@ -114,6 +124,7 @@ SILICONFLOW_VISION_MODEL=Pro/moonshotai/Kimi-K2.6
 POST /api/analyze-image
 POST /api/classify-layout
 POST /api/roast
+POST /api/generate-doodle
 GET  /api/debug/prompts
 GET  /api/debug/skills
 ```

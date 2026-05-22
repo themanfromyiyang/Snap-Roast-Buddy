@@ -5,6 +5,10 @@ const siliconFlowApiKey = process.env.SILICONFLOW_API_KEY ?? process.env.OPENAI_
 const siliconFlowBaseUrl = process.env.SILICONFLOW_BASE_URL ?? "https://api.siliconflow.cn/v1";
 const siliconFlowModel = process.env.SILICONFLOW_MODEL ?? "Pro/zai-org/GLM-4.7";
 const siliconFlowVisionModel = process.env.SILICONFLOW_VISION_MODEL ?? "Pro/moonshotai/Kimi-K2.6";
+const siliconFlowImageEditModel = process.env.SILICONFLOW_IMAGE_EDIT_MODEL ?? "Qwen/Qwen-Image-Edit-2509";
+
+const layoutTypes = ["receipt", "big_text", "pixel_expression", "pixel_doodle"];
+const textLayoutTypes = ["receipt", "big_text", "pixel_expression"];
 
 export async function handleAnalyzeImage(req, res) {
   try {
@@ -64,14 +68,14 @@ export async function handleClassifyLayout(req, res) {
             type: "function",
             function: {
               name: "select_roast_layout",
-              description: "Select the most suitable thermal receipt layout type for Snap Roast Buddy.",
+              description: "Select the most suitable text layout type for Snap Roast Buddy.",
               parameters: {
                 type: "object",
                 properties: {
                   layoutType: {
                     type: "string",
-                    enum: ["receipt", "big_text", "pixel_expression"],
-                    description: "The selected layout type."
+                    enum: textLayoutTypes,
+                    description: "The selected text layout type."
                   },
                   reason: {
                     type: "string",
@@ -143,10 +147,60 @@ export async function handleRoast(req, res) {
   }
 }
 
+export async function handleGenerateDoodle(req, res) {
+  try {
+    requireApiKey();
+    const body = await readJsonBody(req);
+    const imageUrl = cleanText(body.imageUrl || body.imageDataUrl);
+
+    if (!imageUrl) return sendJson(res, 400, { error: "imageUrl or imageDataUrl is required." });
+
+    const prompt = [
+      "把输入图片改造成适合 58mm 热敏纸打印的像素化可爱漫画线稿。",
+      "硬性要求：只能使用黑白二值画面，背景必须是纯白色，图形只能由纯黑色线条和纯黑色块面构成。",
+      "不要灰度，不要彩色，不要阴影渐变，不要纸张纹理，不要摄影质感。",
+      "风格要求：可爱、简洁、漫画感、像素感、线条清晰、主体突出、背景大幅简化。",
+      "输出应像可以直接热敏打印的黑白贴纸线稿。",
+      "不要恐怖或攻击性。"
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    const completion = await fetch(`${siliconFlowBaseUrl}/images/generations`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({
+        model: siliconFlowImageEditModel,
+        prompt,
+        num_inference_steps: 20,
+        guidance_scale: 4,
+        image: imageUrl,
+        image2: imageUrl,
+        image3: imageUrl
+      })
+    });
+
+    if (!completion.ok) return sendUpstreamError(res, completion, "SiliconFlow image edit request failed.");
+
+    const data = await completion.json();
+    const imageResult = extractGeneratedImage(data);
+
+    return sendJson(res, 200, {
+      imageUrl: imageResult.url,
+      imageBase64: imageResult.base64,
+      prompt,
+      rawContent: data
+    });
+  } catch (error) {
+    return sendServerError(res, error);
+  }
+}
+
 export function handleDebugPrompts(_req, res) {
   return sendJson(res, 200, {
     model: siliconFlowModel,
     visionModel: siliconFlowVisionModel,
+    imageEditModel: siliconFlowImageEditModel,
     baseUrl: siliconFlowBaseUrl,
     prompts: buildDebugPrompts()
   });
@@ -170,11 +224,12 @@ function buildVisionPrompt() {
 
 function buildClassificationPrompt() {
   return [
-    "你是 Snap Roast Buddy 的排版分类器。",
-    "你需要把照片描述分类到三种热敏纸排版之一：",
-    "1. receipt：内容丰富、多个点评点、适合照片审判小票。",
+    "你是 Snap Roast Buddy 的文字排版分类器。",
+    "你需要把照片描述分类到三种文字排版之一：",
+    "1. receipt：内容丰富、多个点评点，适合照片审判小票。",
     "2. big_text：有一个非常强的单一爆点，适合超大旋转横幅字。",
     "3. pixel_expression：情绪非常明确，比如可爱、尴尬、无语、震惊、浪漫，适合像素表情。",
+    "注意：pixel_doodle 是图片到图片的独立图像编辑模式，不参与照片描述文字分类。",
     "只通过工具 select_roast_layout 返回分类结果。"
   ].join("\n");
 }
@@ -194,6 +249,8 @@ function buildSystemPrompt(mode, roastLevel) {
       "当前要生成 big_text 横向大字内容：像综艺字幕或紧急播报。评价必须短、狠、适合大字排版，最好 1 到 2 句。",
     pixel_expression:
       "当前要生成 pixel_expression 像素表情内容：像设备被照片刺激后的反应。评价要短，带情绪标签感，最多 2 句。",
+    pixel_doodle:
+      "当前要生成 pixel_doodle 的辅助短评：这张图会被转成像素化可爱简笔画。评价要像贴纸标题，短、可爱、有收藏感。",
     auto:
       "当前模式是 auto：你先判断照片最适合小票审判、爆梗大字还是像素表情，再写一段适合热敏纸打印的短评价。"
   };
@@ -211,7 +268,7 @@ function buildSystemPrompt(mode, roastLevel) {
 }
 
 function buildDebugPrompts() {
-  const modes = ["auto", "receipt", "big_text", "pixel_expression"];
+  const modes = ["auto", ...layoutTypes];
   const roastLevels = ["gentle", "normal", "spicy"];
   const generationPrompts = modes.flatMap((mode) =>
     roastLevels.map((roastLevel) => ({
@@ -259,13 +316,22 @@ function parseClassificationPayload(data) {
 }
 
 function normalizeClassification(value) {
-  const allowed = new Set(["receipt", "big_text", "pixel_expression"]);
+  const allowed = new Set(textLayoutTypes);
   const layoutType = allowed.has(value?.layoutType) ? value.layoutType : "receipt";
   return {
     layoutType,
-    reason: cleanText(value?.reason) || "已根据照片描述选择排版。",
+    reason: cleanText(value?.reason) || "已根据照片描述选择输出类型。",
     confidence: typeof value?.confidence === "number" ? value.confidence : undefined
   };
+}
+
+function extractGeneratedImage(data) {
+  const first = data?.data?.[0] ?? data?.images?.[0] ?? data?.image;
+  if (typeof first === "string") return first.startsWith("http") ? { url: first } : { base64: first };
+  if (first?.url) return { url: first.url };
+  if (first?.b64_json) return { base64: first.b64_json };
+  if (first?.base64) return { base64: first.base64 };
+  return { url: "" };
 }
 
 function parseModelPayload(rawContent) {
@@ -315,7 +381,7 @@ async function readJsonBody(req) {
 
 function requireApiKey() {
   if (siliconFlowApiKey) return;
-  throw Object.assign(new Error("Missing API key. Set SILICONFLOW_API_KEY in Vercel Environment Variables."), {
+  throw Object.assign(new Error("Missing API key. Set SILICONFLOW_API_KEY in Environment Variables."), {
     statusCode: 500
   });
 }

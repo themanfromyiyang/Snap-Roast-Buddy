@@ -380,6 +380,7 @@ select {
   min-height: 620px;
   overflow: auto;
   display: flex;
+  gap: 22px;
   justify-content: center;
   align-items: flex-start;
   padding: 34px 22px 42px;
@@ -388,6 +389,36 @@ select {
     linear-gradient(-45deg, rgba(17, 17, 17, 0.055) 25%, transparent 25%),
     #e3ded4;
   background-size: 18px 18px;
+}
+
+.doodle-stage {
+  width: min(420px, 100%);
+}
+
+.doodle-card {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  border: 1px solid #cfc6b8;
+  border-radius: 8px;
+  padding: 18px;
+  background: var(--paper);
+  box-shadow: 0 16px 26px rgba(30, 22, 14, 0.18);
+}
+
+.doodle-card h3,
+.doodle-card p {
+  margin: 0;
+}
+
+.doodle-card img {
+  display: block;
+  width: 100%;
+  min-height: 260px;
+  border: 1px solid #d7cdbf;
+  border-radius: 6px;
+  background: #fff;
+  object-fit: contain;
 }
 
 .paper-shadow {

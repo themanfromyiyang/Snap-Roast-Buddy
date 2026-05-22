@@ -1,4 +1,4 @@
-export type LayoutType = "receipt" | "big_text" | "pixel_expression";
+export type LayoutType = "receipt" | "big_text" | "pixel_expression" | "pixel_doodle";
 
 export type RoastMode = "auto" | LayoutType;
 export type RoastLevel = "gentle" | "normal" | "spicy";

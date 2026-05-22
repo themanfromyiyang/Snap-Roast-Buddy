@@ -640,6 +640,9 @@ function explainLayoutChoice(analysis, layoutType2) {
   if (layoutType2 === "pixel_expression") {
     return `\u7167\u7247\u60C5\u7EEA\u5F88\u660E\u786E\uFF08${analysis.mood}\uFF09\uFF0C\u7528\u50CF\u7D20\u8868\u60C5\u80FD\u5F3A\u5316\u8BBE\u5907\u88AB\u7167\u7247\u523A\u6FC0\u5230\u7684\u89D2\u8272\u611F\u3002`;
   }
+  if (layoutType2 === "pixel_doodle") {
+    return "\u7167\u7247\u9002\u5408\u8F6C\u6210\u53EF\u7231\u50CF\u7D20\u7B80\u7B14\u753B\uFF0C\u8F93\u51FA\u4F1A\u8C03\u7528\u56FE\u50CF\u7F16\u8F91\u6A21\u578B\u751F\u6210\u8D34\u7EB8\u611F\u56FE\u50CF\u3002";
+  }
   return "\u753B\u9762\u4FE1\u606F\u8F83\u591A\uFF0C\u6709\u591A\u4E2A\u53EF\u70B9\u8BC4\u5143\u7D20\uFF0C\u9002\u5408\u751F\u6210\u4E00\u5F20\u5E26\u5C42\u7EA7\u7684\u7167\u7247\u5BA1\u5224\u5C0F\u7968\u3002";
 }
 
@@ -683,6 +686,13 @@ var layoutSkills = [
     tone: "normal",
     triggerKeywords: ["\u53EF\u7231", "\u5C34\u5C2C", "\u9707\u60CA", "\u65E0\u8BED", "\u6D6A\u6F2B", "\u59D4\u5C48", "\u5446", "\u5C0F\u72D7", "\u5C0F\u732B"],
     visualMotifs: ["SNAP BUDDY MOOD", "BUDDY FACE", "AI \u5FC3\u60C5\u5361\u7247"]
+  },
+  {
+    name: "pixel_doodle_default",
+    layoutType: "pixel_doodle",
+    tone: "normal",
+    triggerKeywords: ["\u53EF\u7231", "\u5BA0\u7269", "\u5C0F\u72D7", "\u5C0F\u732B", "\u73A9\u5177", "\u7269\u54C1", "\u8D34\u7EB8", "\u7B80\u7B14\u753B"],
+    visualMotifs: ["\u9ED1\u767D\u4E8C\u503C\u7EBF\u7A3F", "\u53EF\u7231\u6F2B\u753B\u8D34\u7EB8", "\u70ED\u654F\u7EB8\u63D2\u753B"]
   }
 ];
 var textExamples = [
@@ -732,6 +742,9 @@ var classifyButton = mustQuery("#classifyButton");
 var generateButton = mustQuery("#generateButton");
 var examplesEl = mustQuery("#examples");
 var receiptPaper = mustQuery("#receiptPaper");
+var doodleStage = mustQuery("#doodleStage");
+var doodleImage = mustQuery("#doodleImage");
+var doodleStatus = mustQuery("#doodleStatus");
 var textPreview = mustQuery("#textPreview");
 var layoutType = mustQuery("#layoutType");
 var reason = mustQuery("#reason");
@@ -797,6 +810,9 @@ mode.addEventListener("change", () => {
   classifiedLayoutType = void 0;
   renderClassification();
   renderLocal();
+  if (mode.value === "pixel_doodle") {
+    setStepStatus(classificationStatus, "\u50CF\u7D20\u7B80\u7B14\u753B\u4F1A\u76F4\u63A5\u4ECE\u56FE\u7247\u751F\u6210\uFF0C\u4E0D\u9700\u8981\u6587\u672C\u5206\u7C7B\u3002", "ready");
+  }
 });
 roastLevel.addEventListener("change", renderLocal);
 async function analyzeImage() {
@@ -831,6 +847,15 @@ async function analyzeImage() {
   }
 }
 async function classifyDescription() {
+  if (mode.value === "pixel_doodle") {
+    classifiedLayoutType = "pixel_doodle";
+    classificationReason.textContent = "\u50CF\u7D20\u7B80\u7B14\u753B\u662F\u56FE\u7247\u5230\u56FE\u7247\u7684\u76F4\u63A5\u751F\u6210\u6A21\u5F0F\uFF0C\u4E0D\u9700\u8981\u5148\u8F6C\u6587\u672C\u6216\u5206\u7C7B\u3002";
+    classificationConfidence.textContent = "direct";
+    setStepStatus(classificationStatus, "\u5DF2\u9009\u62E9\u56FE\u7247\u76F4\u51FA\u6A21\u5F0F\u3002", "ready");
+    renderClassification();
+    renderLocal();
+    return classifiedLayoutType;
+  }
   const photoDescription = input.value.trim();
   if (!photoDescription) {
     setStepStatus(classificationStatus, "\u8BF7\u5148\u8F93\u5165\u6216\u5206\u6790\u5F97\u5230\u56FE\u7247\u63CF\u8FF0\u3002", "error");
@@ -847,7 +872,7 @@ async function classifyDescription() {
   }
   setBusy(classifyButton, true, "\u6B63\u5728\u5206\u7C7B...");
   setStepStatus(classificationStatus, "\u6B63\u5728\u8C03\u7528\u6A21\u578B\u8FDB\u884C\u4E09\u5206\u7C7B\u3002", "loading");
-  setStatus("\u6B65\u9AA4 2\uFF1A\u6B63\u5728\u628A\u63CF\u8FF0\u5206\u7C7B\u5230\u4E09\u79CD\u6392\u7248\u3002", "loading");
+  setStatus("\u6B65\u9AA4 2\uFF1A\u6B63\u5728\u628A\u63CF\u8FF0\u5206\u7C7B\u5230\u4E09\u79CD\u6587\u5B57\u6392\u7248\u3002", "loading");
   try {
     const response = await fetch("/api/classify-layout", {
       method: "POST",
@@ -881,6 +906,13 @@ async function classifyDescription() {
   }
 }
 async function generateWithApi() {
+  if (mode.value === "pixel_doodle" || classifiedLayoutType === "pixel_doodle") {
+    setBusy(generateButton, true, "\u6B63\u5728\u751F\u6210\u7EBF\u7A3F...");
+    setStatus("\u6B63\u5728\u76F4\u63A5\u4ECE\u56FE\u7247\u751F\u6210\u9ED1\u767D\u4E8C\u503C\u6F2B\u753B\u7EBF\u7A3F\u3002", "loading");
+    await generateDoodle();
+    setBusy(generateButton, false, "\u751F\u6210 AI \u5C0F\u7968");
+    return;
+  }
   const photoDescription = input.value.trim();
   if (!photoDescription) {
     setStatus("\u8BF7\u5148\u8F93\u5165\u7167\u7247\u63CF\u8FF0\u3002", "error");
@@ -917,8 +949,50 @@ async function generateWithApi() {
     setBusy(generateButton, false, "\u751F\u6210 AI \u5C0F\u7968");
   }
 }
+async function generateDoodle() {
+  const imagePayload = selectedImageDataUrl || selectedImageUrl;
+  if (!imagePayload) {
+    const message = "\u50CF\u7D20\u7B80\u7B14\u753B\u9700\u8981\u5148\u4E0A\u4F20\u56FE\u7247\u6216\u9009\u62E9\u793A\u4F8B\u56FE\u7247\u3002";
+    setStatus(message, "error");
+    doodleStatus.textContent = message;
+    return;
+  }
+  showDoodlePreview(true);
+  doodleStatus.textContent = "\u6B63\u5728\u8C03\u7528\u56FE\u50CF\u7F16\u8F91\u6A21\u578B\u751F\u6210\u9ED1\u767D\u4E8C\u503C\u6F2B\u753B\u7EBF\u7A3F...";
+  try {
+    const response = await fetch("/api/generate-doodle", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ...selectedImageDataUrl ? { imageDataUrl: selectedImageDataUrl } : { imageUrl: selectedImageUrl }
+      })
+    });
+    const payload = await response.json();
+    if (!response.ok || payload.error) throw new Error(formatApiError(payload, "\u50CF\u7D20\u7B80\u7B14\u753B\u751F\u6210\u5931\u8D25\u3002"));
+    const imageSrc = payload.imageUrl || (payload.imageBase64 ? `data:image/png;base64,${payload.imageBase64}` : "");
+    if (!imageSrc) throw new Error("\u56FE\u50CF\u7F16\u8F91\u6A21\u578B\u6CA1\u6709\u8FD4\u56DE\u56FE\u7247\u3002");
+    doodleImage.src = imageSrc;
+    doodleStatus.textContent = "\u9ED1\u767D\u4E8C\u503C\u6F2B\u753B\u7EBF\u7A3F\u5DF2\u751F\u6210\u3002";
+    latestAiComment = "\u672C\u673A\u5DF2\u628A\u8FD9\u5F20\u7167\u7247\u6539\u9020\u6210\u9002\u5408\u70ED\u654F\u7EB8\u7684\u9ED1\u767D\u6F2B\u753B\u7EBF\u7A3F\u3002";
+    aiCommentEl.textContent = latestAiComment;
+    setStatus("\u6B65\u9AA4 3 \u5B8C\u6210\uFF1A\u9ED1\u767D\u4E8C\u503C\u6F2B\u753B\u7EBF\u7A3F\u5DF2\u751F\u6210\u3002", "ready");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "\u50CF\u7D20\u7B80\u7B14\u753B\u751F\u6210\u5931\u8D25\u3002";
+    doodleStatus.textContent = message;
+    setStatus(message, "error");
+  }
+}
 function renderLocal() {
   const sourceDescription = latestEnhancedDescription || input.value;
+  if (getLayoutMode() === "pixel_doodle") {
+    showDoodlePreview(true);
+    layoutType.textContent = "pixel_doodle";
+    reason.textContent = "\u5F53\u524D\u6A21\u5F0F\u4E3A\u50CF\u7D20\u7B80\u7B14\u753B\uFF0C\u5C06\u76F4\u63A5\u4ECE\u56FE\u7247\u751F\u6210\u767D\u5E95\u9ED1\u7EBF\u7684\u4E8C\u503C\u6F2B\u753B\u7EBF\u7A3F\u3002";
+    heightReadout.textContent = "image edit";
+    textPreview.textContent = "[ pixel_doodle ]\n\u8C03\u7528\u56FE\u50CF\u7F16\u8F91\u6A21\u578B\u751F\u6210\u767D\u5E95\u9ED1\u7EBF\u7684\u4E8C\u503C\u6F2B\u753B\u7EBF\u7A3F\u3002";
+    return;
+  }
+  showDoodlePreview(false);
   const result = generateRoastLayoutWithSkills(
     {
       photoDescription: sourceDescription,
@@ -954,6 +1028,10 @@ function resetGeneratedState() {
 }
 function renderClassification() {
   classificationType.textContent = classifiedLayoutType ?? (mode.value === "auto" ? "\u7B49\u5F85\u5206\u7C7B" : mode.value);
+}
+function showDoodlePreview(show) {
+  doodleStage.hidden = !show;
+  receiptPaper.parentElement?.toggleAttribute("hidden", show);
 }
 function setStatus(message, state) {
   apiStatus.textContent = message;

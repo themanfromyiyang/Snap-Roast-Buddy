@@ -22,6 +22,14 @@ type ClassificationResponse = {
   detail?: string;
 };
 
+type DoodleResponse = {
+  imageUrl?: string;
+  imageBase64?: string;
+  prompt?: string;
+  error?: string;
+  detail?: string;
+};
+
 const layoutSkills: LayoutSkill[] = [
   {
     name: "receipt_default",
@@ -43,6 +51,13 @@ const layoutSkills: LayoutSkill[] = [
     tone: "normal",
     triggerKeywords: ["可爱", "尴尬", "震惊", "无语", "浪漫", "委屈", "呆", "小狗", "小猫"],
     visualMotifs: ["SNAP BUDDY MOOD", "BUDDY FACE", "AI 心情卡片"]
+  },
+  {
+    name: "pixel_doodle_default",
+    layoutType: "pixel_doodle",
+    tone: "normal",
+    triggerKeywords: ["可爱", "宠物", "小狗", "小猫", "玩具", "物品", "贴纸", "简笔画"],
+    visualMotifs: ["黑白二值线稿", "可爱漫画贴纸", "热敏纸插画"]
   }
 ];
 
@@ -95,6 +110,9 @@ const classifyButton = mustQuery<HTMLButtonElement>("#classifyButton");
 const generateButton = mustQuery<HTMLButtonElement>("#generateButton");
 const examplesEl = mustQuery<HTMLDivElement>("#examples");
 const receiptPaper = mustQuery<HTMLDivElement>("#receiptPaper");
+const doodleStage = mustQuery<HTMLDivElement>("#doodleStage");
+const doodleImage = mustQuery<HTMLImageElement>("#doodleImage");
+const doodleStatus = mustQuery<HTMLParagraphElement>("#doodleStatus");
 const textPreview = mustQuery<HTMLPreElement>("#textPreview");
 const layoutType = mustQuery<HTMLSpanElement>("#layoutType");
 const reason = mustQuery<HTMLParagraphElement>("#reason");
@@ -166,6 +184,9 @@ mode.addEventListener("change", () => {
   classifiedLayoutType = undefined;
   renderClassification();
   renderLocal();
+  if (mode.value === "pixel_doodle") {
+    setStepStatus(classificationStatus, "像素简笔画会直接从图片生成，不需要文本分类。", "ready");
+  }
 });
 roastLevel.addEventListener("change", renderLocal);
 
@@ -205,6 +226,16 @@ async function analyzeImage() {
 }
 
 async function classifyDescription() {
+  if (mode.value === "pixel_doodle") {
+    classifiedLayoutType = "pixel_doodle";
+    classificationReason.textContent = "像素简笔画是图片到图片的直接生成模式，不需要先转文本或分类。";
+    classificationConfidence.textContent = "direct";
+    setStepStatus(classificationStatus, "已选择图片直出模式。", "ready");
+    renderClassification();
+    renderLocal();
+    return classifiedLayoutType;
+  }
+
   const photoDescription = input.value.trim();
   if (!photoDescription) {
     setStepStatus(classificationStatus, "请先输入或分析得到图片描述。", "error");
@@ -223,7 +254,7 @@ async function classifyDescription() {
 
   setBusy(classifyButton, true, "正在分类...");
   setStepStatus(classificationStatus, "正在调用模型进行三分类。", "loading");
-  setStatus("步骤 2：正在把描述分类到三种排版。", "loading");
+  setStatus("步骤 2：正在把描述分类到三种文字排版。", "loading");
 
   try {
     const response = await fetch("/api/classify-layout", {
@@ -260,6 +291,14 @@ async function classifyDescription() {
 }
 
 async function generateWithApi() {
+  if (mode.value === "pixel_doodle" || classifiedLayoutType === "pixel_doodle") {
+    setBusy(generateButton, true, "正在生成线稿...");
+    setStatus("正在直接从图片生成黑白二值漫画线稿。", "loading");
+    await generateDoodle();
+    setBusy(generateButton, false, "生成 AI 小票");
+    return;
+  }
+
   const photoDescription = input.value.trim();
   if (!photoDescription) {
     setStatus("请先输入照片描述。", "error");
@@ -302,8 +341,56 @@ async function generateWithApi() {
   }
 }
 
+async function generateDoodle() {
+  const imagePayload = selectedImageDataUrl || selectedImageUrl;
+  if (!imagePayload) {
+    const message = "像素简笔画需要先上传图片或选择示例图片。";
+    setStatus(message, "error");
+    doodleStatus.textContent = message;
+    return;
+  }
+
+  showDoodlePreview(true);
+  doodleStatus.textContent = "正在调用图像编辑模型生成黑白二值漫画线稿...";
+
+  try {
+    const response = await fetch("/api/generate-doodle", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ...(selectedImageDataUrl ? { imageDataUrl: selectedImageDataUrl } : { imageUrl: selectedImageUrl })
+      })
+    });
+    const payload = (await response.json()) as DoodleResponse;
+    if (!response.ok || payload.error) throw new Error(formatApiError(payload, "像素简笔画生成失败。"));
+
+    const imageSrc = payload.imageUrl || (payload.imageBase64 ? `data:image/png;base64,${payload.imageBase64}` : "");
+    if (!imageSrc) throw new Error("图像编辑模型没有返回图片。");
+
+    doodleImage.src = imageSrc;
+    doodleStatus.textContent = "黑白二值漫画线稿已生成。";
+    latestAiComment = "本机已把这张照片改造成适合热敏纸的黑白漫画线稿。";
+    aiCommentEl.textContent = latestAiComment;
+    setStatus("步骤 3 完成：黑白二值漫画线稿已生成。", "ready");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "像素简笔画生成失败。";
+    doodleStatus.textContent = message;
+    setStatus(message, "error");
+  }
+}
+
 function renderLocal() {
   const sourceDescription = latestEnhancedDescription || input.value;
+  if (getLayoutMode() === "pixel_doodle") {
+    showDoodlePreview(true);
+    layoutType.textContent = "pixel_doodle";
+    reason.textContent = "当前模式为像素简笔画，将直接从图片生成白底黑线的二值漫画线稿。";
+    heightReadout.textContent = "image edit";
+    textPreview.textContent = "[ pixel_doodle ]\n调用图像编辑模型生成白底黑线的二值漫画线稿。";
+    return;
+  }
+
+  showDoodlePreview(false);
   const result = generateRoastLayoutWithSkills(
     {
       photoDescription: sourceDescription,
@@ -343,6 +430,11 @@ function resetGeneratedState() {
 
 function renderClassification() {
   classificationType.textContent = classifiedLayoutType ?? (mode.value === "auto" ? "等待分类" : mode.value);
+}
+
+function showDoodlePreview(show: boolean) {
+  doodleStage.hidden = !show;
+  receiptPaper.parentElement?.toggleAttribute("hidden", show);
 }
 
 function setStatus(message: string, state: "ready" | "loading" | "error") {

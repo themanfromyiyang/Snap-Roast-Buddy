@@ -45,6 +45,7 @@
                 <option value="receipt">强制小票式</option>
                 <option value="big_text">强制横向大字</option>
                 <option value="pixel_expression">强制像素表情</option>
+                <option value="pixel_doodle">强制像素简笔画</option>
               </select>
             </label>
             <label>
@@ -111,6 +112,14 @@
             <div class="paper-teeth" aria-hidden="true"></div>
             <div id="receiptPaper" class="receipt-paper"></div>
             <div class="paper-feed" aria-hidden="true"></div>
+          </div>
+          <div id="doodleStage" class="doodle-stage" hidden>
+            <div class="doodle-card">
+              <p class="eyebrow">Pixel doodle</p>
+              <h3>黑白二值漫画线稿</h3>
+              <img id="doodleImage" alt="生成的黑白二值漫画线稿" />
+              <p id="doodleStatus">等待生成。</p>
+            </div>
           </div>
         </div>
 

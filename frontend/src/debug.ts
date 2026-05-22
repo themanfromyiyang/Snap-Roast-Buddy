@@ -36,6 +36,14 @@ const layoutSkills: LayoutSkill[] = [
     triggerKeywords: ["可爱", "尴尬", "震惊", "无语", "浪漫", "委屈", "呆", "小狗", "小猫"],
     visualMotifs: ["SNAP BUDDY MOOD", "BUDDY FACE", "AI 心情卡片"]
   }
+  ,
+  {
+    name: "pixel_doodle_default",
+    layoutType: "pixel_doodle",
+    tone: "normal",
+    triggerKeywords: ["可爱", "宠物", "小狗", "小猫", "玩具", "物品", "贴纸", "简笔画"],
+    visualMotifs: ["黑白二值线稿", "可爱漫画贴纸", "热敏纸插画"]
+  }
 ];
 
 const sampleDescription =

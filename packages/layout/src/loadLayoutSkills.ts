@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { extname, join } from "node:path";
 import type { LayoutSkill, LayoutType } from "./types.js";
 
-const layoutTypes = new Set<LayoutType>(["receipt", "big_text", "pixel_expression"]);
+const layoutTypes = new Set<LayoutType>(["receipt", "big_text", "pixel_expression", "pixel_doodle"]);
 
 export function loadLayoutSkills(skillDir: string): LayoutSkill[] {
   if (!existsSync(skillDir)) return [];

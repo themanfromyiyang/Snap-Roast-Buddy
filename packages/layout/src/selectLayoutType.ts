@@ -32,5 +32,9 @@ export function explainLayoutChoice(analysis: PhotoAnalysis, layoutType: LayoutT
     return `照片情绪很明确（${analysis.mood}），用像素表情能强化设备被照片刺激到的角色感。`;
   }
 
+  if (layoutType === "pixel_doodle") {
+    return "照片适合转成可爱像素简笔画，输出会调用图像编辑模型生成贴纸感图像。";
+  }
+
   return "画面信息较多，有多个可点评元素，适合生成一张带层级的照片审判小票。";
 }
