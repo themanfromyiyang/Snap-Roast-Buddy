@@ -1,4 +1,4 @@
-import { pixelFaces } from "./pixelFaces.js";
+import { selectPixelFace } from "./pixelFaces.js";
 import type {
   BigTextContent,
   LayoutBlock,
@@ -73,9 +73,10 @@ function bigTextLayout(content: BigTextContent, widthDots: number): LayoutDocume
 
 function pixelExpressionLayout(content: PixelExpressionContent, widthDots: number): LayoutDocument {
   const b = builder(widthDots);
+  const face = selectPixelFace(content.faceType);
   b.text("[ SNAP BUDDY MOOD ]", "center", 19, "bold");
   b.space(16);
-  b.pixel(pixelFaces[content.faceType], 10);
+  b.pixel(face.matrix, 8);
   b.space(16);
   b.text(`当前表情：${content.moodLabel}`, "left", 18, "bold");
   b.text(`照片关键词：${content.keywords.join(" / ")}`, "left", 17);

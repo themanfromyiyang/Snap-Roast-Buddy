@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Snap Roast Buddy 小票排版 Demo</title>
+    <title>Snap Roast Buddy 测试页</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -35,31 +35,48 @@
         <section class="step-card">
           <div class="step-title">
             <span>2</span>
-            <h2>编辑描述，三分类排版</h2>
+            <h2>三分类与生成设置</h2>
           </div>
           <label for="photoDescription">图片描述 / 可手动编辑</label>
           <textarea id="photoDescription" spellcheck="false"></textarea>
           <div class="examples-row" id="examples" aria-label="文字范例"></div>
+
           <div class="control-grid">
             <label>
-              <span>模式</span>
+              <span>文字模式</span>
               <select id="mode">
-                <option value="auto">自动分类</option>
-                <option value="receipt">强制小票式</option>
-                <option value="big_text">强制横向大字</option>
-                <option value="pixel_expression">强制像素表情</option>
-                <option value="pixel_doodle">强制像素简笔画</option>
+                <option value="auto">自动</option>
+                <option value="receipt">小票</option>
+                <option value="big_text">爆字</option>
+                <option value="pixel_expression">表情</option>
               </select>
             </label>
             <label>
               <span>吐槽强度</span>
               <select id="roastLevel">
                 <option value="normal">正常</option>
-                <option value="gentle">温和</option>
-                <option value="spicy">更辣</option>
+                <option value="gentle">温柔</option>
+                <option value="spicy">辛辣</option>
               </select>
             </label>
           </div>
+
+          <div class="control-grid">
+            <label>
+              <span>漫画</span>
+              <select id="mangaMode">
+                <option value="none">不使用</option>
+                <option value="top">放在顶部</option>
+                <option value="bottom">放在底部</option>
+                <option value="standalone">单独生成</option>
+              </select>
+            </label>
+            <label>
+              <span>当前流程</span>
+              <strong id="workflowReadout">图片分析 / 排版选择 / 内容生成</strong>
+            </label>
+          </div>
+
           <button class="secondary-action" type="button" id="classifyButton">进行三分类</button>
           <p class="step-status" id="classificationStatus" data-state="ready">等待图片描述。</p>
           <div class="result-meta">
@@ -100,6 +117,15 @@
           </div>
           <p class="reason" id="reason"></p>
         </section>
+
+        <section class="step-card">
+          <div class="step-title">
+            <span>4</span>
+            <h2>生成漫画并合入小票</h2>
+          </div>
+          <button class="secondary-action" type="button" id="generateMangaButton">生成漫画</button>
+          <p class="step-status" id="mangaStatus" data-state="ready">漫画会直接由图片生成白底黑线结果，再按设置插入小票。</p>
+        </section>
       </section>
 
       <section class="preview-pane" aria-label="小票预览">
@@ -115,14 +141,6 @@
             <div class="paper-teeth" aria-hidden="true"></div>
             <div id="receiptPaper" class="receipt-paper"></div>
             <div class="paper-feed" aria-hidden="true"></div>
-          </div>
-          <div id="doodleStage" class="doodle-stage" hidden>
-            <div class="doodle-card">
-              <p class="eyebrow">Pixel doodle</p>
-              <h3>黑白二值漫画线稿</h3>
-              <img id="doodleImage" alt="生成的黑白二值漫画线稿" />
-              <p id="doodleStatus">等待生成。</p>
-            </div>
           </div>
         </div>
 

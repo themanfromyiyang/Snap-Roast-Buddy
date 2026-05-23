@@ -68,13 +68,14 @@ export type BigTextContent = {
 };
 
 export type PixelFaceType =
-  | "speechless"
-  | "smirk"
-  | "shocked"
-  | "heart"
-  | "cry"
-  | "cool"
-  | "question";
+  | "cute_love"
+  | "happy_proud"
+  | "awkward_speechless"
+  | "shocked_confused"
+  | "angry_roast"
+  | "sad_cry"
+  | "begging_give"
+  | "farewell";
 
 export type PixelExpressionContent = {
   faceType: PixelFaceType;

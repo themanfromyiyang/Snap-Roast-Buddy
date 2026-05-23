@@ -30,7 +30,7 @@ export function generateReceiptContent(
   skill?: LayoutSkill,
   generatedComment?: string
 ): ReceiptContent {
-  const motifs = skill?.visualMotifs?.length ? skill.visualMotifs : ["照片审判小票", "照片检测单", "今日成片报告"];
+  const motifs = skill?.visualMotifs?.length ? skill.visualMotifs : ["今日照片审判小票", "照片检测单", "AI 成片体检报告"];
   const findings = buildFindings(analysis).slice(0, 4);
 
   return {
@@ -89,11 +89,11 @@ export function generatePixelExpressionContent(
 
 function buildFindings(analysis: PhotoAnalysis): string[] {
   const findings = analysis.funnyPoints.map((point) => {
-    if (point === "有人被裁出画面") return "边缘朋友只获得部分出场许可";
-    if (point === "主体太小") return "主角正在和背景玩躲猫猫";
-    if (point === "背景抢戏") return "背景正在积极申请主角位";
-    if (point === "光线偏暗") return "光线偏暗，但气氛很努力";
-    if (point === "表情过于有戏") return "表情管理已进入综艺频道";
+    if (point.includes("裁")) return "边缘朋友只获得部分出场许可";
+    if (point.includes("主体") || point.includes("太小")) return "主角正在和背景玩躲猫猫";
+    if (point.includes("背景")) return "背景正在积极申请主角位";
+    if (point.includes("光线") || point.includes("暗")) return "光线偏暗，但气氛很努力";
+    if (point.includes("表情")) return "表情管理已进入综艺频道";
     return point;
   });
 
@@ -102,10 +102,10 @@ function buildFindings(analysis: PhotoAnalysis): string[] {
 }
 
 function receiptRoast(analysis: PhotoAnalysis, roastLevel: RoastLevel): string {
-  if (analysis.flaws.includes("有人被裁出画面")) {
+  if (hasIssue(analysis, "裁")) {
     return "这张照片像一场友情生存挑战，\n每个人都在努力挤进历史。";
   }
-  if (analysis.flaws.includes("主体太小")) {
+  if (hasIssue(analysis, "主体") || hasIssue(analysis, "太小")) {
     return "风景非常成功，\n主角则选择低调到接近隐身。";
   }
   if (analysis.cutenessLevel >= 75) {
@@ -118,21 +118,21 @@ function receiptRoast(analysis: PhotoAnalysis, roastLevel: RoastLevel): string {
 }
 
 function oneLineRoastFor(analysis: PhotoAnalysis, roastLevel: RoastLevel): string {
-  if (analysis.flaws.includes("主体太小")) return "本机找了半天，\n终于在风景里发现了你。";
-  if (analysis.flaws.includes("有人被裁出画面")) return "请确认朋友没有被画面开除。";
-  if (analysis.flaws.includes("镜头距离过近")) return "镜头说：我有点害怕。";
-  if (analysis.flaws.includes("画面偏糊")) return "这一刻很珍贵，\n可惜画质先撤退了。";
-  if (analysis.flaws.includes("光线偏暗")) return "气氛到了，\n灯光还在路上。";
+  if (hasIssue(analysis, "主体") || hasIssue(analysis, "太小")) return "本机找了半天，\n终于在风景里发现了你。";
+  if (hasIssue(analysis, "裁")) return "请确认朋友没有被画面开除。";
+  if (hasIssue(analysis, "太近")) return "镜头说：我有点害怕。";
+  if (hasIssue(analysis, "糊")) return "这一刻很珍贵，\n可惜画质先撤退了。";
+  if (hasIssue(analysis, "暗") || hasIssue(analysis, "光线")) return "气氛到了，\n灯光还在路上。";
   return roastLevel === "spicy" ? "本机短暂沉默，\n然后选择打印证据。" : "这张很有记忆点，\n主要是因为它很难忘。";
 }
 
 function adviceFor(analysis: PhotoAnalysis, tiny = false): string {
   const prefix = tiny ? "建议：" : "";
-  if (analysis.flaws.includes("主体太小")) return `${prefix}下次让主角稍微大于蚂蚁`;
-  if (analysis.flaws.includes("有人被裁出画面")) return `${prefix}手机拿远一点，给每位朋友完整出场机会。`;
-  if (analysis.flaws.includes("光线偏暗")) return `${prefix}补一点光，别让气氛独自上班。`;
-  if (analysis.flaws.includes("画面偏糊")) return `${prefix}按快门前先稳住，别让回忆产生重影。`;
-  if (analysis.flaws.includes("背景抢戏")) return `${prefix}换个干净背景，让主角重新夺回主场。`;
+  if (hasIssue(analysis, "主体") || hasIssue(analysis, "太小")) return `${prefix}下次让主角稍微大于蚂蚁`;
+  if (hasIssue(analysis, "裁")) return `${prefix}手机拿远一点，给每位朋友完整出场机会。`;
+  if (hasIssue(analysis, "暗") || hasIssue(analysis, "光线")) return `${prefix}补一点光，别让气氛独自上班。`;
+  if (hasIssue(analysis, "糊")) return `${prefix}按快门前先稳住，别让回忆产生重影。`;
+  if (hasIssue(analysis, "背景")) return `${prefix}换个干净背景，让主角重新夺回主场。`;
   return `${prefix}保留这张，但可以再拍一张当保险。`;
 }
 
@@ -152,35 +152,44 @@ function headlineFromPunchline(punchline: string): string {
 }
 
 function faceFor(analysis: PhotoAnalysis): PixelFaceType {
-  if (analysis.cutenessLevel >= 75) return "heart";
-  if (analysis.flaws.includes("画面偏糊")) return "cry";
-  if (analysis.mood === "很酷") return "cool";
-  if (analysis.awkwardLevel >= 75) return "speechless";
-  if (analysis.roastPotential >= 80) return "shocked";
-  if (analysis.flaws.length === 0) return "smirk";
-  return "question";
+  if (analysis.cutenessLevel >= 75 || analysis.mood === "浪漫") return "cute_love";
+  if (analysis.photoQualityIssues.some((issue) => issue.includes("糊") || issue.includes("暗"))) return "sad_cry";
+  if (analysis.mood === "很酷") return "happy_proud";
+  if (analysis.awkwardLevel >= 75) return "awkward_speechless";
+  if (analysis.roastPotential >= 85) return "angry_roast";
+  if (analysis.roastPotential >= 70 || analysis.strongestPunchline) return "shocked_confused";
+  if (analysis.flaws.length === 0) return "happy_proud";
+  return "begging_give";
 }
 
 function moodLabelFor(faceType: PixelFaceType, analysis: PhotoAnalysis): string {
   const labels: Record<PixelFaceType, string> = {
-    speechless: "灵魂加载失败",
-    smirk: "憋笑",
-    shocked: "本机震惊",
-    heart: "被可爱击中",
-    cry: "画质哭哭",
-    cool: "酷到点头",
-    question: "问号脸"
+    cute_love: "被可爱击中",
+    happy_proud: "得意营业",
+    awkward_speechless: "灵魂加载失败",
+    shocked_confused: "本机震惊",
+    angry_roast: "开怼预备",
+    sad_cry: "画质哭哭",
+    begging_give: "拜托再拍一张",
+    farewell: "溜了溜了"
   };
   return analysis.mood === "浪漫" ? "甜度超标" : labels[faceType];
 }
 
 function pixelCommentFor(analysis: PhotoAnalysis, faceType: PixelFaceType, roastLevel: RoastLevel): string {
-  if (faceType === "heart") return "这张不许删。\n本机批准收藏。";
-  if (faceType === "cry") return "本人还在，\n清晰度可能刚刚掉线了。";
-  if (faceType === "speechless") return "这不是合照，\n这是友情生存挑战。";
-  if (faceType === "shocked") return "本机看到这里，\n处理器轻轻叹了口气。";
+  if (faceType === "cute_love") return "这张不许删。\n本机批准收藏。";
+  if (faceType === "sad_cry") return "本人还在，\n清晰度可能刚刚掉线。";
+  if (faceType === "awkward_speechless") return "这不是合照，\n这是友情生存挑战。";
+  if (faceType === "shocked_confused") return "本机看到这里，\n处理器轻轻叹了口气。";
+  if (faceType === "angry_roast") return "本机短评：\n画面很努力，效果很有戏。";
+  if (faceType === "begging_give") return "拜托，\n给这张照片一次补拍机会。";
+  if (faceType === "farewell") return "本机先溜，\n证据已经打印。";
   if (roastLevel === "gentle") return "有点好笑，\n但还挺可爱。";
-  return "本机短评：\n画面很努力，效果很有戏。";
+  return "本机短评：\n这张很有记忆点。";
+}
+
+function hasIssue(analysis: PhotoAnalysis, keyword: string): boolean {
+  return [...analysis.flaws, ...analysis.funnyPoints, ...analysis.photoQualityIssues].some((item) => item.includes(keyword));
 }
 
 export { bar, stars };

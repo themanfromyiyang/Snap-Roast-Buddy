@@ -535,8 +535,7 @@ pre {
 }
 
 .debug-panel pre,
-.debug-list pre,
-.face-card pre {
+.debug-list pre {
   max-height: 380px;
   border: 1px solid #d7cdbf;
   border-radius: 8px;
@@ -565,21 +564,42 @@ pre {
 
 .face-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
 }
 
 .face-card {
   display: grid;
-  gap: 8px;
+  justify-items: center;
+  gap: 9px;
   border: 1px solid #d7cdbf;
   border-radius: 8px;
   padding: 12px;
   background: #fffefa;
 }
 
-.face-card code {
-  overflow-wrap: anywhere;
+.pixel-face-preview {
+  display: grid;
+  grid-template-columns: repeat(var(--face-cols), 1fr);
+  grid-template-rows: repeat(var(--face-rows), 1fr);
+  width: min(100%, 132px);
+  aspect-ratio: var(--face-cols) / var(--face-rows);
+  border: 1px solid #111;
+  background: #fff;
+}
+
+.pixel-face-preview span {
+  display: block;
+  background: #fff;
+}
+
+.pixel-face-preview span[data-on="true"] {
+  background: #111;
+}
+
+.face-card p {
+  margin: 0;
+  text-align: center;
   font-size: 0.76rem;
   color: var(--muted);
 }
@@ -976,8 +996,10 @@ pre {
   padding-block: 4px;
   padding-inline: calc(50% - 22px);
   scroll-snap-type: x mandatory;
+  scroll-snap-stop: always;
   scrollbar-width: none;
   scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
 }
 
 .camera-mode-strip::-webkit-scrollbar {
@@ -1249,9 +1271,53 @@ pre {
 .result-scroller {
   overflow-y: auto;
   scrollbar-gutter: stable;
-  padding: 0 14px 18px;
+  padding: 0 0 18px;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.34) transparent;
+}
+
+#resultOriginalImage,
+#ticketLongPreview {
+  display: none;
+}
+
+.album-carousel {
+  display: grid;
+  grid-auto-columns: 100%;
+  grid-auto-flow: column;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-snap-stop: always;
+  scrollbar-width: none;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+.album-carousel::-webkit-scrollbar {
+  display: none;
+}
+
+.album-slide {
+  min-width: 0;
+  scroll-snap-align: center;
+}
+
+.image-carousel {
+  padding-bottom: 0;
+}
+
+.image-slide {
+  display: grid;
+  place-items: center;
+  padding-inline: 14px;
+}
+
+.ticket-carousel {
+  align-items: start;
+}
+
+.ticket-slide {
+  padding-inline: 0;
 }
 
 .result-scroller::-webkit-scrollbar {
@@ -1288,6 +1354,10 @@ pre {
   margin: 14px auto 18px;
   color: rgba(255, 250, 241, 0.72);
   font-weight: 800;
+}
+
+.fixed-printer-slot {
+  margin-top: 0;
 }
 
 .photo-info strong {
@@ -1411,16 +1481,16 @@ pre {
   z-index: 60;
   display: grid;
   place-items: center;
-  padding: max(18px, env(safe-area-inset-top)) 14px max(18px, env(safe-area-inset-bottom));
+  padding: max(18px, env(safe-area-inset-top)) 0 max(18px, env(safe-area-inset-bottom));
+  overflow-y: auto;
   background: rgba(0, 0, 0, 0.94);
 }
 
 .image-lightbox img {
   display: block;
-  max-width: calc(100% - 28px);
-  max-height: calc(100% - 72px);
-  object-fit: contain;
-  border-radius: 12px;
+  width: 100%;
+  height: auto;
+  border-radius: 0;
 }
 
 .lightbox-close {

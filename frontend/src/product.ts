@@ -1,5 +1,6 @@
 import { generateRoastLayoutWithSkills } from "../../packages/layout/src/generateRoastLayoutWithSkills.js";
-import type { LayoutSkill, LayoutType, RoastLevel, RoastMode } from "../../packages/layout/src/types.js";
+import type { LayoutType, RoastLevel, RoastMode } from "../../packages/layout/src/types.js";
+import { createStandaloneMangaTicket, createTicketHtmlWithManga, layoutSkills as sharedLayoutSkills } from "./sharedProductFlow.js";
 
 type ProductLayoutType = "receipt" | "big_text" | "expression" | "sketch";
 type TriggerMode = "auto" | "manual";
@@ -64,30 +65,6 @@ type ProductRecordsResponse = {
   detail?: string;
 };
 
-const layoutSkills: LayoutSkill[] = [
-  {
-    name: "receipt_default",
-    layoutType: "receipt",
-    tone: "normal",
-    triggerKeywords: ["自拍", "合照", "聚会", "美食", "旅行", "宠物", "杂物", "光线"],
-    visualMotifs: ["今日照片审判小票", "朋友合照检测单", "AI 成片体检报告"]
-  },
-  {
-    name: "big_text_variety_show",
-    layoutType: "big_text",
-    tone: "normal",
-    triggerKeywords: ["糊", "裁掉", "太近", "太远", "主体不明", "背景抢戏", "离谱", "非常小"],
-    visualMotifs: [">>> 紧急播报 <<<", "!!! 构图警告 !!!", ">>> 现场判定 <<<", "=== 友情事故 ==="]
-  },
-  {
-    name: "pixel_expression_default",
-    layoutType: "pixel_expression",
-    tone: "normal",
-    triggerKeywords: ["可爱", "尴尬", "震惊", "无语", "浪漫", "委屈", "呆", "小狗", "小猫"],
-    visualMotifs: ["SNAP BUDDY MOOD", "BUDDY FACE", "AI 心情卡片"]
-  }
-];
-
 const settings: ProductSettings = {
   triggerMode: "auto",
   generationMode: "auto",
@@ -127,10 +104,12 @@ const generatingMessage = mustQuery<HTMLParagraphElement>("#generatingMessage");
 const progressFill = mustQuery<HTMLSpanElement>("#progressFill");
 const resultScroller = mustQuery<HTMLDivElement>("#resultScroller");
 const resultOriginalImage = mustQuery<HTMLImageElement>("#resultOriginalImage");
+const imageCarousel = mustQuery<HTMLDivElement>("#imageCarousel");
 const recordTime = mustQuery<HTMLSpanElement>("#recordTime");
 const recordMode = mustQuery<HTMLElement>("#recordMode");
 const recordCounter = mustQuery<HTMLHeadingElement>("#recordCounter");
 const ticketLongPreview = mustQuery<HTMLDivElement>("#ticketLongPreview");
+const ticketCarousel = mustQuery<HTMLDivElement>("#ticketCarousel");
 const regenerateButton = mustQuery<HTMLButtonElement>("#regenerateButton");
 const deleteRecordButton = mustQuery<HTMLButtonElement>("#deleteRecordButton");
 const backToCameraButton = mustQuery<HTMLButtonElement>("#backToCameraButton");
@@ -145,6 +124,9 @@ let currentRecordIndex = 0;
 let isGenerating = false;
 let messageTimer = 0;
 let swipeStartX = 0;
+let modeSnapTimer = 0;
+let albumSnapTimer = 0;
+let isSyncingAlbum = false;
 let funMessageIndex = 0;
 let regenerateDraftSettings: ProductSettings = { ...settings };
 
@@ -200,10 +182,19 @@ resultScreen.addEventListener("touchstart", (event) => {
   swipeStartX = event.touches[0]?.clientX ?? 0;
 });
 resultScreen.addEventListener("touchend", (event) => {
+  if ((event.target as HTMLElement).closest(".album-carousel")) return;
   const endX = event.changedTouches[0]?.clientX ?? swipeStartX;
   const delta = endX - swipeStartX;
   if (Math.abs(delta) > 58) shiftRecord(delta > 0 ? -1 : 1);
 });
+
+modeStrip.addEventListener("scroll", () => {
+  window.clearTimeout(modeSnapTimer);
+  modeSnapTimer = window.setTimeout(snapCameraModeToNearest, 90);
+});
+
+imageCarousel.addEventListener("scroll", () => syncAlbumScroll(imageCarousel));
+ticketCarousel.addEventListener("scroll", () => syncAlbumScroll(ticketCarousel));
 
 imageInput.addEventListener("change", async () => {
   const file = imageInput.files?.[0];
@@ -363,7 +354,7 @@ async function generateSnapRoastResult(imageUrl: string, productSettings: Produc
       printWidthDots: 384,
       returnLayoutJson: true
     },
-    layoutSkills
+    sharedLayoutSkills
   );
   currentStep += 1;
   let sketchImageUrl: string | undefined;
@@ -429,44 +420,75 @@ function renderCurrentRecord() {
   if (!record) return;
 
   resultOriginalImage.src = record.originalImageUrl;
+  updateResultMeta(record);
+  renderAlbumSlides();
+  scrollAlbumToIndex(currentRecordIndex, "auto");
+  resultScroller.scrollTop = 0;
+}
+
+function updateResultMeta(record: PhotoRecord) {
+  resultOriginalImage.src = record.originalImageUrl;
   recordTime.textContent = formatTime(record.createdAt);
   recordMode.textContent = modeLabel(record);
   recordCounter.textContent = `${currentRecordIndex + 1} / ${records.length}`;
+}
+
+function renderAlbumSlides() {
+  imageCarousel.innerHTML = "";
+  ticketCarousel.innerHTML = "";
   ticketLongPreview.innerHTML = "";
 
-  if (
-    record.sketchImageUrl &&
-    (record.sketchMode === "top" || record.layoutType === "sketch")
-  ) {
-    ticketLongPreview.append(createSketchBlock(record));
-  }
+  records.forEach((record, index) => {
+    const imageSlide = document.createElement("article");
+    imageSlide.className = "album-slide image-slide";
+    const img = document.createElement("img");
+    img.className = "result-original";
+    img.src = record.originalImageUrl;
+    img.alt = "原始照片";
+    img.addEventListener("click", () => {
+      currentRecordIndex = index;
+      updateResultMeta(record);
+      openImageLightbox();
+    });
+    imageSlide.append(img);
+    imageCarousel.append(imageSlide);
+
+    const ticketSlide = document.createElement("article");
+    ticketSlide.className = "album-slide ticket-slide";
+    ticketSlide.append(createTicketBody(record));
+    ticketCarousel.append(ticketSlide);
+  });
+}
+
+function createTicketBody(record: PhotoRecord): HTMLElement {
+  const body = document.createElement("div");
+  body.className = "ticket-long-preview";
 
   if (record.ticketHtml) {
-    ticketLongPreview.append(createPrinterSlot());
     const shell = document.createElement("div");
     shell.className = "product-paper";
-    shell.innerHTML = record.ticketHtml;
-    ticketLongPreview.append(shell);
+    shell.innerHTML = createTicketHtmlWithManga(record.ticketHtml, record.sketchImageUrl, record.sketchMode);
+    body.append(shell);
   } else if (record.ticketText) {
-    ticketLongPreview.append(createPrinterSlot());
     const paper = document.createElement("pre");
     paper.className = "product-paper text-paper";
     paper.textContent = record.ticketText;
-    ticketLongPreview.append(paper);
-  }
-
-  if (record.sketchImageUrl && record.sketchMode === "bottom") {
-    ticketLongPreview.append(createSketchBlock(record));
+    body.append(paper);
+  } else if (record.sketchImageUrl) {
+    const shell = document.createElement("div");
+    shell.className = "product-paper";
+    shell.innerHTML = createStandaloneMangaTicket(record.sketchImageUrl ?? "");
+    body.append(shell);
   }
 
   if (!record.ticketHtml && !record.ticketText && !record.sketchImageUrl) {
     const empty = document.createElement("p");
     empty.className = "empty-ticket";
     empty.textContent = "这张结果还没有可展示内容。";
-    ticketLongPreview.append(empty);
+    body.append(empty);
   }
 
-  resultScroller.scrollTop = 0;
+  return body;
 }
 
 function createPrinterSlot(): HTMLElement {
@@ -475,21 +497,6 @@ function createPrinterSlot(): HTMLElement {
   const mouth = document.createElement("span");
   slot.append(mouth);
   return slot;
-}
-
-function createSketchBlock(record: PhotoRecord): HTMLElement {
-  const block = document.createElement("figure");
-  block.className = "sketch-ticket-block";
-  const img = document.createElement("img");
-  img.src = record.sketchImageUrl ?? "";
-  img.alt = "白底黑线漫画";
-  block.append(img);
-  if (record.caption && record.layoutType === "sketch") {
-    const caption = document.createElement("figcaption");
-    caption.textContent = record.caption;
-    block.append(caption);
-  }
-  return block;
 }
 
 function showCamera() {
@@ -522,7 +529,37 @@ function showResult(index: number) {
 function shiftRecord(offset: number) {
   if (records.length <= 1) return;
   const next = (currentRecordIndex + offset + records.length) % records.length;
-  showResult(next);
+  currentRecordIndex = next;
+  updateResultMeta(records[currentRecordIndex]);
+  scrollAlbumToIndex(currentRecordIndex, "smooth");
+}
+
+function syncAlbumScroll(source: HTMLDivElement) {
+  if (isSyncingAlbum) return;
+  const target = source === imageCarousel ? ticketCarousel : imageCarousel;
+  isSyncingAlbum = true;
+  target.scrollLeft = source.scrollLeft;
+  isSyncingAlbum = false;
+  window.clearTimeout(albumSnapTimer);
+  albumSnapTimer = window.setTimeout(() => snapAlbumToNearest(source), 110);
+}
+
+function snapAlbumToNearest(source: HTMLDivElement) {
+  if (!records.length) return;
+  const index = Math.max(0, Math.min(records.length - 1, Math.round(source.scrollLeft / Math.max(1, source.clientWidth))));
+  currentRecordIndex = index;
+  updateResultMeta(records[index]);
+  scrollAlbumToIndex(index, "smooth");
+}
+
+function scrollAlbumToIndex(index: number, behavior: ScrollBehavior = "smooth") {
+  const left = index * imageCarousel.clientWidth;
+  isSyncingAlbum = true;
+  imageCarousel.scrollTo({ left, behavior });
+  ticketCarousel.scrollTo({ left, behavior });
+  window.setTimeout(() => {
+    isSyncingAlbum = false;
+  }, behavior === "smooth" ? 260 : 0);
 }
 
 function openImageLightbox() {
@@ -644,6 +681,22 @@ function centerSelectedCameraMode() {
       behavior: "smooth"
     });
   });
+}
+
+function snapCameraModeToNearest() {
+  const buttons = Array.from(modeStrip.querySelectorAll<HTMLButtonElement>("button[data-value]"));
+  if (!buttons.length) return;
+  const center = modeStrip.scrollLeft + modeStrip.clientWidth / 2;
+  const nearest = buttons.reduce((best, button) => {
+    const distance = Math.abs(button.offsetLeft + button.offsetWidth / 2 - center);
+    return distance < best.distance ? { button, distance } : best;
+  }, { button: buttons[0], distance: Number.POSITIVE_INFINITY }).button;
+  const value = nearest.dataset.value;
+  if (value && value !== settings.generationMode) {
+    updateSetting("generationMode", value);
+  } else {
+    centerSelectedCameraMode();
+  }
 }
 
 function setGenerationStage(step: number, total: number, title: string, message: string) {

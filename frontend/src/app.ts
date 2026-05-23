@@ -1,5 +1,17 @@
 import { generateRoastLayoutWithSkills } from "../../packages/layout/src/generateRoastLayoutWithSkills.js";
-import type { LayoutSkill, LayoutType, RoastLevel, RoastMode } from "../../packages/layout/src/types.js";
+import type { LayoutType, RoastLevel, RoastMode } from "../../packages/layout/src/types.js";
+import {
+  createStandaloneMangaTicket,
+  createTicketHtmlWithManga,
+  describeMode,
+  layoutSkills,
+  mapRoastLevel,
+  modeToRoastMode,
+  normalizeTextLayout,
+  type MangaMode,
+  type ProductRoastLevel,
+  type TextGenerationMode
+} from "./sharedProductFlow.js";
 
 type RoastApiResponse = {
   aiComment?: string;
@@ -29,37 +41,6 @@ type DoodleResponse = {
   error?: string;
   detail?: string;
 };
-
-const layoutSkills: LayoutSkill[] = [
-  {
-    name: "receipt_default",
-    layoutType: "receipt",
-    tone: "normal",
-    triggerKeywords: ["自拍", "合照", "聚会", "美食", "旅行", "宠物", "杂物", "光线"],
-    visualMotifs: ["今日照片审判小票", "朋友合照检测单", "AI 成片体检报告"]
-  },
-  {
-    name: "big_text_variety_show",
-    layoutType: "big_text",
-    tone: "normal",
-    triggerKeywords: ["糊", "裁掉", "太近", "太远", "主体不明", "背景抢戏", "离谱", "非常小"],
-    visualMotifs: [">>> 紧急播报 <<<", "!!! 构图警告 !!!", ">>> 现场判定 <<<", "=== 友情事故 ==="]
-  },
-  {
-    name: "pixel_expression_default",
-    layoutType: "pixel_expression",
-    tone: "normal",
-    triggerKeywords: ["可爱", "尴尬", "震惊", "无语", "浪漫", "委屈", "呆", "小狗", "小猫"],
-    visualMotifs: ["SNAP BUDDY MOOD", "BUDDY FACE", "AI 心情卡片"]
-  },
-  {
-    name: "pixel_doodle_default",
-    layoutType: "pixel_doodle",
-    tone: "normal",
-    triggerKeywords: ["可爱", "宠物", "小狗", "小猫", "玩具", "物品", "贴纸", "简笔画"],
-    visualMotifs: ["黑白二值线稿", "可爱漫画贴纸", "热敏纸插画"]
-  }
-];
 
 const textExamples = [
   {
@@ -102,17 +83,17 @@ const imageExamples = [
 const input = mustQuery<HTMLTextAreaElement>("#photoDescription");
 const mode = mustQuery<HTMLSelectElement>("#mode");
 const roastLevel = mustQuery<HTMLSelectElement>("#roastLevel");
+const mangaMode = mustQuery<HTMLSelectElement>("#mangaMode");
+const workflowReadout = mustQuery<HTMLElement>("#workflowReadout");
 const imageUpload = mustQuery<HTMLInputElement>("#imageUpload");
 const imageExamplesEl = mustQuery<HTMLDivElement>("#imageExamples");
 const imagePreview = mustQuery<HTMLImageElement>("#imagePreview");
 const analyzeImageButton = mustQuery<HTMLButtonElement>("#analyzeImageButton");
 const classifyButton = mustQuery<HTMLButtonElement>("#classifyButton");
 const generateButton = mustQuery<HTMLButtonElement>("#generateButton");
+const generateMangaButton = mustQuery<HTMLButtonElement>("#generateMangaButton");
 const examplesEl = mustQuery<HTMLDivElement>("#examples");
 const receiptPaper = mustQuery<HTMLDivElement>("#receiptPaper");
-const doodleStage = mustQuery<HTMLDivElement>("#doodleStage");
-const doodleImage = mustQuery<HTMLImageElement>("#doodleImage");
-const doodleStatus = mustQuery<HTMLParagraphElement>("#doodleStatus");
 const textPreview = mustQuery<HTMLPreElement>("#textPreview");
 const layoutType = mustQuery<HTMLSpanElement>("#layoutType");
 const reason = mustQuery<HTMLParagraphElement>("#reason");
@@ -124,12 +105,14 @@ const classificationType = mustQuery<HTMLSpanElement>("#classificationType");
 const classificationConfidence = mustQuery<HTMLSpanElement>("#classificationConfidence");
 const classificationReason = mustQuery<HTMLParagraphElement>("#classificationReason");
 const classificationStatus = mustQuery<HTMLParagraphElement>("#classificationStatus");
+const mangaStatus = mustQuery<HTMLParagraphElement>("#mangaStatus");
 
 let inputUpdateTimer = 0;
 let selectedImageUrl = "";
 let selectedImageDataUrl = "";
 let latestAiComment = "";
 let latestEnhancedDescription = "";
+let latestMangaImageUrl = "";
 let classifiedLayoutType: LayoutType | undefined;
 
 input.value = textExamples[0].text;
@@ -175,6 +158,7 @@ imageUpload.addEventListener("change", async () => {
 analyzeImageButton.addEventListener("click", analyzeImage);
 classifyButton.addEventListener("click", classifyDescription);
 generateButton.addEventListener("click", generateWithApi);
+generateMangaButton.addEventListener("click", generateMangaStep);
 input.addEventListener("input", () => {
   resetGeneratedState();
   window.clearTimeout(inputUpdateTimer);
@@ -183,12 +167,15 @@ input.addEventListener("input", () => {
 mode.addEventListener("change", () => {
   classifiedLayoutType = undefined;
   renderClassification();
+  renderWorkflow();
   renderLocal();
-  if (mode.value === "pixel_doodle") {
-    setStepStatus(classificationStatus, "像素简笔画会直接从图片生成，不需要文本分类。", "ready");
-  }
 });
 roastLevel.addEventListener("change", renderLocal);
+mangaMode.addEventListener("change", () => {
+  latestMangaImageUrl = "";
+  renderWorkflow();
+  renderLocal();
+});
 
 async function analyzeImage() {
   const imagePayload = selectedImageDataUrl || selectedImageUrl;
@@ -226,16 +213,6 @@ async function analyzeImage() {
 }
 
 async function classifyDescription() {
-  if (mode.value === "pixel_doodle") {
-    classifiedLayoutType = "pixel_doodle";
-    classificationReason.textContent = "像素简笔画是图片到图片的直接生成模式，不需要先转文本或分类。";
-    classificationConfidence.textContent = "direct";
-    setStepStatus(classificationStatus, "已选择图片直出模式。", "ready");
-    renderClassification();
-    renderLocal();
-    return classifiedLayoutType;
-  }
-
   const photoDescription = input.value.trim();
   if (!photoDescription) {
     setStepStatus(classificationStatus, "请先输入或分析得到图片描述。", "error");
@@ -243,8 +220,8 @@ async function classifyDescription() {
   }
 
   if (mode.value !== "auto") {
-    classifiedLayoutType = mode.value as LayoutType;
-    classificationReason.textContent = "当前为强制模式，直接使用用户选择的排版。";
+    classifiedLayoutType = normalizeTextLayout(mode.value as LayoutType);
+    classificationReason.textContent = "当前为强制模式，直接使用用户选择的文字排版。";
     classificationConfidence.textContent = "manual";
     setStepStatus(classificationStatus, "已使用强制模式。", "ready");
     renderClassification();
@@ -263,15 +240,13 @@ async function classifyDescription() {
       body: JSON.stringify({ photoDescription })
     });
     const payload = (await response.json()) as ClassificationResponse;
-    if (!response.ok || payload.error || !payload.layoutType) {
-      throw new Error(formatApiError(payload, "排版分类失败。"));
-    }
+    if (!response.ok || payload.error || !payload.layoutType) throw new Error(formatApiError(payload, "排版分类失败。"));
 
-    classifiedLayoutType = payload.layoutType;
+    classifiedLayoutType = normalizeTextLayout(payload.layoutType);
     classificationReason.textContent = payload.reason || "已完成分类。";
     classificationConfidence.textContent = typeof payload.confidence === "number" ? payload.confidence.toFixed(2) : "-";
     setStepStatus(classificationStatus, "三分类完成。", "ready");
-    setStatus("步骤 2 完成：已选择排版类型。", "ready");
+    setStatus("步骤 2 完成：已选择文字排版类型。", "ready");
     renderClassification();
     renderLocal();
     return classifiedLayoutType;
@@ -291,34 +266,25 @@ async function classifyDescription() {
 }
 
 async function generateWithApi() {
-  if (mode.value === "pixel_doodle" || classifiedLayoutType === "pixel_doodle") {
-    setBusy(generateButton, true, "正在生成线稿...");
-    setStatus("正在直接从图片生成黑白二值漫画线稿。", "loading");
-    await generateDoodle();
-    setBusy(generateButton, false, "生成 AI 小票");
-    return;
-  }
-
   const photoDescription = input.value.trim();
   if (!photoDescription) {
     setStatus("请先输入照片描述。", "error");
     return;
   }
 
-  setBusy(generateButton, true, "AI 正在吐槽...");
+  setBusy(generateButton, true, "AI 正在生成...");
   setStatus("步骤 3：正在生成评价并排版。", "loading");
 
-  const selectedLayout = classifiedLayoutType ?? (await classifyDescription());
-  const generationMode = selectedLayout ?? (mode.value as RoastMode);
-
   try {
+    const selectedLayout = normalizeTextLayout((classifiedLayoutType ?? (await classifyDescription())) as LayoutType);
+    const generationMode = selectedLayout as RoastMode;
     const response = await fetch("/api/roast", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         photoDescription,
         mode: generationMode,
-        roastLevel: roastLevel.value
+        roastLevel: mapRoastLevel(roastLevel.value as ProductRoastLevel)
       })
     });
 
@@ -329,6 +295,9 @@ async function generateWithApi() {
     latestEnhancedDescription = payload.enhancedDescription?.trim() ?? "";
     aiCommentEl.textContent = latestAiComment || "模型没有返回评价，已使用本地模板。";
     setStatus("步骤 3 完成：AI 评价已生成，并完成小票排版。", "ready");
+    if (mangaMode.value !== "none") {
+      setStepStatus(mangaStatus, "可以继续第 4 步生成漫画。", "ready");
+    }
     renderLocal();
   } catch (error) {
     latestAiComment = "";
@@ -341,61 +310,66 @@ async function generateWithApi() {
   }
 }
 
-async function generateDoodle() {
-  const imagePayload = selectedImageDataUrl || selectedImageUrl;
-  if (!imagePayload) {
-    const message = "像素简笔画需要先上传图片或选择示例图片。";
-    setStatus(message, "error");
-    doodleStatus.textContent = message;
+async function generateMangaStep() {
+  if (mangaMode.value === "none") {
+    setStepStatus(mangaStatus, "请先在第 2 步把漫画设置为顶部、底部或单独。", "error");
     return;
   }
 
-  showDoodlePreview(true);
-  doodleStatus.textContent = "正在调用图像编辑模型生成黑白二值漫画线稿...";
+  const imagePayload = selectedImageDataUrl || selectedImageUrl;
+  setBusy(generateMangaButton, true, "正在生成漫画...");
+  setStepStatus(mangaStatus, "正在调用图像编辑模型，生成白底黑线漫画。", "loading");
+  setStatus("步骤 4：正在生成漫画。", "loading");
 
   try {
-    const response = await fetch("/api/generate-doodle", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        ...(selectedImageDataUrl ? { imageDataUrl: selectedImageDataUrl } : { imageUrl: selectedImageUrl })
-      })
-    });
-    const payload = (await response.json()) as DoodleResponse;
-    if (!response.ok || payload.error) throw new Error(formatApiError(payload, "像素简笔画生成失败。"));
-
-    const imageSrc = payload.imageUrl || (payload.imageBase64 ? `data:image/png;base64,${payload.imageBase64}` : "");
-    if (!imageSrc) throw new Error("图像编辑模型没有返回图片。");
-
-    doodleImage.src = imageSrc;
-    doodleStatus.textContent = "黑白二值漫画线稿已生成。";
-    latestAiComment = "本机已把这张照片改造成适合热敏纸的黑白漫画线稿。";
-    aiCommentEl.textContent = latestAiComment;
-    setStatus("步骤 3 完成：黑白二值漫画线稿已生成。", "ready");
+    latestMangaImageUrl = await generateMangaImage(imagePayload);
+    if (mangaMode.value === "standalone") {
+      latestAiComment = "本机已把这张照片改造成适合热敏纸的白底黑线漫画。";
+      latestEnhancedDescription = "";
+      aiCommentEl.textContent = latestAiComment;
+      renderStandaloneManga();
+    } else {
+      renderLocal();
+    }
+    setStepStatus(mangaStatus, "漫画已生成，并按当前设置更新到小票预览。", "ready");
+    setStatus("步骤 4 完成：漫画已合入热敏纸结果。", "ready");
   } catch (error) {
-    const message = error instanceof Error ? error.message : "像素简笔画生成失败。";
-    doodleStatus.textContent = message;
+    const message = error instanceof Error ? error.message : "漫画生成失败。";
+    setStepStatus(mangaStatus, message, "error");
     setStatus(message, "error");
+  } finally {
+    setBusy(generateMangaButton, false, "生成漫画");
   }
 }
 
+async function generateMangaImage(imagePayload: string): Promise<string> {
+  if (!imagePayload) throw new Error("漫画生成需要先上传图片或选择示例图片。");
+
+  const response = await fetch("/api/generate-doodle", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(selectedImageDataUrl ? { imageDataUrl: selectedImageDataUrl } : { imageUrl: selectedImageUrl })
+  });
+  const payload = (await response.json()) as DoodleResponse;
+  if (!response.ok || payload.error) throw new Error(formatApiError(payload, "漫画生成失败。"));
+
+  const imageSrc = payload.imageUrl || (payload.imageBase64 ? `data:image/png;base64,${payload.imageBase64}` : "");
+  if (!imageSrc) throw new Error("图像编辑模型没有返回图片。");
+  return imageSrc;
+}
+
 function renderLocal() {
-  const sourceDescription = latestEnhancedDescription || input.value;
-  if (getLayoutMode() === "pixel_doodle") {
-    showDoodlePreview(true);
-    layoutType.textContent = "pixel_doodle";
-    reason.textContent = "当前模式为像素简笔画，将直接从图片生成白底黑线的二值漫画线稿。";
-    heightReadout.textContent = "image edit";
-    textPreview.textContent = "[ pixel_doodle ]\n调用图像编辑模型生成白底黑线的二值漫画线稿。";
+  if (mangaMode.value === "standalone" && latestMangaImageUrl) {
+    renderStandaloneManga();
     return;
   }
 
-  showDoodlePreview(false);
+  const sourceDescription = latestEnhancedDescription || input.value;
   const result = generateRoastLayoutWithSkills(
     {
       photoDescription: sourceDescription,
       generatedComment: latestAiComment,
-      mode: getLayoutMode(),
+      mode: modeToRoastMode(mode.value as TextGenerationMode, classifiedLayoutType),
       roastLevel: roastLevel.value as RoastLevel,
       language: "zh",
       printWidthDots: 384,
@@ -404,37 +378,47 @@ function renderLocal() {
     layoutSkills
   );
 
-  receiptPaper.innerHTML = result.renderResult?.svg ?? "";
+  const ticketHtml = createTicketHtmlWithManga(result.renderResult?.svg ?? "", latestMangaImageUrl, mangaMode.value as MangaMode);
+  receiptPaper.innerHTML = ticketHtml;
   receiptPaper.style.setProperty("--paper-height", `${result.layoutJson.heightDots ?? 0}px`);
   textPreview.textContent = result.textPreview;
-  layoutType.textContent = result.layoutType;
+  layoutType.textContent = describeMode(result.layoutType);
   reason.textContent = result.reason;
   heightReadout.textContent = `${result.layoutJson.widthDots}px x ${result.layoutJson.heightDots ?? "auto"}px`;
 }
 
-function getLayoutMode(): RoastMode {
-  if (mode.value !== "auto") return mode.value as LayoutType;
-  return classifiedLayoutType ?? "auto";
+function renderStandaloneManga() {
+  receiptPaper.innerHTML = createStandaloneMangaTicket(latestMangaImageUrl);
+  textPreview.textContent = "[ 漫画 ]\n白底黑线、抽象漫画风格，适合热敏纸打印。";
+  layoutType.textContent = "漫画";
+  reason.textContent = "当前漫画设置为单独生成，直接输出热敏纸漫画。";
+  heightReadout.textContent = "384px x manga";
 }
 
 function resetGeneratedState() {
   latestAiComment = "";
   latestEnhancedDescription = "";
+  latestMangaImageUrl = "";
   classifiedLayoutType = undefined;
   aiCommentEl.textContent = "尚未调用 API，当前为本地模板预览。";
   classificationReason.textContent = "尚未分类。";
   classificationConfidence.textContent = "-";
   setStepStatus(classificationStatus, "等待三分类。", "ready");
+  setStepStatus(mangaStatus, "漫画会直接由图片生成白底黑线结果，再按设置插入小票。", "ready");
   renderClassification();
+  renderWorkflow();
 }
 
 function renderClassification() {
-  classificationType.textContent = classifiedLayoutType ?? (mode.value === "auto" ? "等待分类" : mode.value);
+  classificationType.textContent = classifiedLayoutType ? describeMode(classifiedLayoutType) : mode.value === "auto" ? "等待分类" : describeMode(mode.value as TextGenerationMode);
 }
 
-function showDoodlePreview(show: boolean) {
-  doodleStage.hidden = !show;
-  receiptPaper.parentElement?.toggleAttribute("hidden", show);
+function renderWorkflow() {
+  const parts = ["图片分析"];
+  if (mode.value === "auto" && mangaMode.value !== "standalone") parts.push("排版选择");
+  if (mangaMode.value !== "standalone") parts.push("内容生成");
+  if (mangaMode.value !== "none") parts.push("漫画生成");
+  workflowReadout.textContent = parts.join(" / ");
 }
 
 function setStatus(message: string, state: "ready" | "loading" | "error") {
@@ -450,7 +434,7 @@ function setStepStatus(element: HTMLElement, message: string, state: "ready" | "
 function formatApiError(payload: { error?: string; detail?: string }, fallback: string): string {
   const detail = payload.detail || payload.error || fallback;
   if (detail.includes("Model disabled")) {
-    return `${fallback} 当前视觉模型不可用：Model disabled。请在 .env 中更换 SILICONFLOW_VISION_MODEL，或确认该模型已在 SiliconFlow 账号中启用。`;
+    return `${fallback} 当前模型不可用：Model disabled。请在 .env 中更换对应模型，或确认模型已在 SiliconFlow 账号中启用。`;
   }
   return detail;
 }
@@ -480,6 +464,8 @@ classificationReason.textContent = "尚未分类。";
 classificationConfidence.textContent = "-";
 setStepStatus(imageStatus, "请选择示例图或上传图片。", "ready");
 setStepStatus(classificationStatus, "等待三分类。", "ready");
+setStepStatus(mangaStatus, "漫画会直接由图片生成白底黑线结果，再按设置插入小票。", "ready");
 setStatus("API 就绪。可以从图片分析开始，也可以直接编辑文字生成。", "ready");
 renderClassification();
+renderWorkflow();
 renderLocal();

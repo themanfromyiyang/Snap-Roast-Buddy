@@ -1,0 +1,18 @@
+{
+  "name": "pixel_doodle_receipt_insert",
+  "layoutType": "pixel_doodle",
+  "description": "把白底黑线、抽象漫画式简笔画作为热敏纸小票内部的插画区块，而不是独立附件。",
+  "triggerKeywords": ["漫画", "简笔画", "白底黑线", "线稿", "抽象"],
+  "tone": "normal",
+  "layoutRules": {
+    "title": "[ BUDDY COMIC STRIP ]",
+    "imageHeight": 220,
+    "margin": 16,
+    "useDashedSeparators": true,
+    "integrateInsideReceipt": true,
+    "background": "white",
+    "ink": "black"
+  },
+  "contentSlots": ["comicTitle", "blackWhiteLineArt", "dashedSeparator"],
+  "visualMotifs": ["热敏纸内嵌漫画", "白底黑线小插图", "漫画回执"]
+}
