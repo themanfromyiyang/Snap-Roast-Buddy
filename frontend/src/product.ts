@@ -71,6 +71,15 @@ type ProductRecordsResponse = {
 type FocusConstraintSet = MediaTrackConstraintSet & {
   focusMode?: string;
   pointsOfInterest?: { x: number; y: number }[];
+  zoom?: number;
+};
+
+type ZoomCapabilities = MediaTrackCapabilities & {
+  zoom?: {
+    min?: number;
+    max?: number;
+    step?: number;
+  };
 };
 
 const settings: ProductSettings = {
@@ -101,6 +110,7 @@ const cameraDebugMessage = mustQuery<HTMLElement>("#cameraDebugMessage");
 const manualStartPanel = mustQuery<HTMLDivElement>("#manualStartPanel");
 const cameraHint = mustQuery<HTMLParagraphElement>("#cameraHint");
 const modeStrip = mustQuery<HTMLDivElement>(".camera-mode-strip");
+const cameraZoomStrip = mustQuery<HTMLDivElement>("#cameraZoomStrip");
 const shutterButton = mustQuery<HTMLButtonElement>("#shutterButton");
 const galleryButton = mustQuery<HTMLButtonElement>("#galleryButton");
 const latestButton = mustQuery<HTMLButtonElement>("#latestButton");
@@ -132,7 +142,6 @@ const cancelDeleteButton = mustQuery<HTMLButtonElement>("#cancelDeleteButton");
 const confirmDeleteButton = mustQuery<HTMLButtonElement>("#confirmDeleteButton");
 const imageLightbox = mustQuery<HTMLDivElement>("#imageLightbox");
 const lightboxImage = mustQuery<HTMLImageElement>("#lightboxImage");
-const closeImageLightboxButton = mustQuery<HTMLButtonElement>("#closeImageLightboxButton");
 
 const focusReticle = document.createElement("span");
 focusReticle.className = "focus-reticle";
@@ -141,6 +150,8 @@ viewfinder.append(focusReticle);
 let selectedImageUrl = "";
 let cameraStream: MediaStream | undefined;
 let cameraFacingMode: "user" | "environment" = "environment";
+let cameraZoom = 1;
+let cameraUsesHardwareZoom = false;
 let records: PhotoRecord[] = [];
 let currentRecordIndex = 0;
 let isGenerating = false;
@@ -159,6 +170,8 @@ let isLoadingMoreRecords = false;
 let usingLocalRecordStore = false;
 const productRecordsPageSize = 5;
 const localProductRecordsKey = "snap-roast-buddy.product-records.v1";
+const productRecordsDbName = "snap-roast-buddy";
+const productRecordsStoreName = "product-records";
 
 const funGeneratingMessages = [
   "正在寻找照片里最会抢戏的角落。",
@@ -223,7 +236,6 @@ document.addEventListener("keydown", (event) => {
   if (!deleteConfirmSheet.hidden && event.key === "Escape") closeDeleteConfirmDialog();
 });
 resultOriginalImage.addEventListener("click", openImageLightbox);
-closeImageLightboxButton.addEventListener("click", closeImageLightbox);
 imageLightbox.addEventListener("click", (event) => {
   if (event.target === imageLightbox) closeImageLightbox();
 });
@@ -249,6 +261,12 @@ modeStrip.addEventListener("scroll", () => {
   updateCameraModeFromScroll();
   window.clearTimeout(modeSnapTimer);
   modeSnapTimer = window.setTimeout(snapCameraModeToNearest, 90);
+});
+
+cameraZoomStrip.addEventListener("click", (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-zoom]");
+  if (!button) return;
+  setCameraZoom(Number(button.dataset.zoom) || 1);
 });
 
 imageCarousel.addEventListener("scroll", () => syncAlbumScroll(imageCarousel));
@@ -282,7 +300,7 @@ document.querySelectorAll<HTMLElement>("[data-regenerate-setting]").forEach((gro
 
 document
   .querySelectorAll<HTMLButtonElement>(
-    ".product-back, .icon-button, .round-tool, .pill-button, .settings-upload-button, .shutter-button, .thumbnail-button, .segmented-control button, .option-list button"
+    ".product-back, .icon-button, .round-tool, .pill-button, .settings-upload-button, .shutter-button, .thumbnail-button, .camera-zoom-strip button, .segmented-control button, .option-list button"
   )
   .forEach((button) => {
     button.addEventListener("pointerdown", softHaptic);
@@ -297,6 +315,7 @@ async function startCamera() {
   if (!navigator.mediaDevices?.getUserMedia) {
     cameraHint.textContent = "当前浏览器不支持直接调用摄像头，请在设置里导入照片。";
     emptyViewfinder.hidden = false;
+    cameraZoomStrip.hidden = true;
     return;
   }
 
@@ -313,14 +332,18 @@ async function startCamera() {
     });
     cameraFeed.srcObject = cameraStream;
     await cameraFeed.play();
+    updateCameraFacingState();
+    await applyCameraZoom();
     cameraFeed.hidden = false;
     cameraPreview.hidden = true;
     emptyViewfinder.hidden = true;
     manualStartPanel.hidden = true;
+    cameraZoomStrip.hidden = false;
     cameraHint.textContent = "按下快门，生成今日照片审判。";
   } catch (error) {
     cameraStream = undefined;
     cameraFeed.hidden = true;
+    cameraZoomStrip.hidden = true;
     emptyViewfinder.hidden = false;
     const isSecure = window.isSecureContext || location.hostname === "localhost" || location.hostname === "127.0.0.1";
     cameraDebugMessage.textContent = isSecure
@@ -336,7 +359,9 @@ async function startCamera() {
 function stopCameraStream() {
   cameraStream?.getTracks().forEach((track) => track.stop());
   cameraStream = undefined;
+  cameraUsesHardwareZoom = false;
   cameraFeed.srcObject = null;
+  syncCameraViewTransform();
 }
 
 async function flipCamera() {
@@ -377,6 +402,20 @@ async function captureFromCamera() {
     sourceY = (videoHeight - sourceHeight) / 2;
   }
 
+  const digitalZoom = cameraUsesHardwareZoom ? 1 : Math.max(1, cameraZoom);
+  if (digitalZoom > 1) {
+    const zoomedWidth = sourceWidth / digitalZoom;
+    const zoomedHeight = sourceHeight / digitalZoom;
+    sourceX += (sourceWidth - zoomedWidth) / 2;
+    sourceY += (sourceHeight - zoomedHeight) / 2;
+    sourceWidth = zoomedWidth;
+    sourceHeight = zoomedHeight;
+  }
+
+  if (cameraFacingMode === "user") {
+    context.translate(canvas.width, 0);
+    context.scale(-1, 1);
+  }
   context.drawImage(cameraFeed, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, canvas.width, canvas.height);
   selectedImageUrl = canvas.toDataURL("image/jpeg", 0.92);
   showSelectedImagePreview(selectedImageUrl);
@@ -417,12 +456,59 @@ function showFocusReticle(x: number, y: number) {
   softHaptic();
 }
 
+function setCameraZoom(nextZoom: number) {
+  cameraZoom = Math.max(0.6, Math.min(3, nextZoom));
+  renderCameraZoom();
+  void applyCameraZoom();
+  softHaptic();
+}
+
+async function applyCameraZoom() {
+  cameraUsesHardwareZoom = false;
+  const track = cameraStream?.getVideoTracks()[0];
+  if (track) {
+    try {
+      const capabilities = track.getCapabilities() as ZoomCapabilities;
+      const zoomCapability = capabilities.zoom;
+      if (zoomCapability?.min !== undefined && zoomCapability.max !== undefined) {
+        const min = zoomCapability.min;
+        const max = zoomCapability.max;
+        const nextZoom = Math.max(min, Math.min(max, cameraZoom));
+        await track.applyConstraints({ advanced: [{ zoom: nextZoom } as FocusConstraintSet] });
+        cameraUsesHardwareZoom = Math.abs(nextZoom - cameraZoom) < 0.05;
+      }
+    } catch {
+      cameraUsesHardwareZoom = false;
+    }
+  }
+  syncCameraViewTransform();
+}
+
+function renderCameraZoom() {
+  cameraZoomStrip.querySelectorAll<HTMLButtonElement>("button[data-zoom]").forEach((button) => {
+    const value = Number(button.dataset.zoom) || 1;
+    button.classList.toggle("is-selected", Math.abs(value - cameraZoom) < 0.05);
+  });
+}
+
+function updateCameraFacingState() {
+  document.body.classList.toggle("is-front-camera", cameraFacingMode === "user");
+  syncCameraViewTransform();
+}
+
+function syncCameraViewTransform() {
+  const digitalZoom = cameraUsesHardwareZoom ? 1 : Math.max(1, cameraZoom);
+  viewfinder.style.setProperty("--camera-preview-scale", String(digitalZoom));
+  viewfinder.style.setProperty("--camera-mirror-scale", cameraFacingMode === "user" ? "-1" : "1");
+}
+
 function showSelectedImagePreview(imageUrl: string) {
   cameraPreview.src = imageUrl;
   cameraPreview.hidden = false;
   cameraFeed.hidden = true;
   emptyViewfinder.hidden = true;
   manualStartPanel.hidden = settings.triggerMode === "auto";
+  cameraZoomStrip.hidden = true;
 }
 
 async function startGenerationFromSelected() {
@@ -737,11 +823,20 @@ function showCamera() {
     currentRecordIndex = 0;
     scrollAlbumToIndex(0, "auto");
   }
+  selectedImageUrl = "";
+  cameraPreview.removeAttribute("src");
+  cameraPreview.hidden = true;
+  manualStartPanel.hidden = true;
   cameraScreen.hidden = false;
   generatingScreen.hidden = true;
   resultScreen.hidden = true;
   playScreenEntrance(cameraScreen, "camera");
-  if (!selectedImageUrl && !cameraStream) void startCamera();
+  if (cameraStream) {
+    cameraFeed.hidden = false;
+    void cameraFeed.play();
+  } else {
+    void startCamera();
+  }
 }
 
 function showGenerating(imageUrl: string) {
@@ -903,16 +998,16 @@ async function loadProductRecords() {
   try {
     const payload = await getJson<ProductRecordsResponse>(`/api/product-records?offset=0&limit=${productRecordsPageSize}`);
     const remoteRecords = [...(payload.records ?? [])].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
-    const localRecords = readLocalProductRecords();
+    const localRecords = await readCachedProductRecords();
     usingLocalRecordStore = remoteRecords.length === 0 && localRecords.length > 0;
     records = usingLocalRecordStore ? localRecords.slice(0, productRecordsPageSize) : remoteRecords;
     productRecordsTotal = usingLocalRecordStore ? localRecords.length : payload.total ?? records.length;
-    if (remoteRecords.length) writeLocalProductRecords(remoteRecords);
+    if (remoteRecords.length) await writeCachedProductRecords(remoteRecords);
     renderLatestThumb();
     if (!resultScreen.hidden) renderCurrentRecord();
   } catch {
     usingLocalRecordStore = true;
-    const localRecords = readLocalProductRecords();
+    const localRecords = await readCachedProductRecords();
     records = localRecords.slice(0, productRecordsPageSize);
     productRecordsTotal = localRecords.length;
     renderLatestThumb();
@@ -925,7 +1020,7 @@ async function loadMoreProductRecordsIfNeeded(index: number) {
   isLoadingMoreRecords = true;
   try {
     if (usingLocalRecordStore) {
-      const localRecords = readLocalProductRecords();
+      const localRecords = await readCachedProductRecords();
       const nextRecords = localRecords.slice(records.length, records.length + productRecordsPageSize);
       records = [...records, ...nextRecords];
       productRecordsTotal = localRecords.length;
@@ -963,19 +1058,94 @@ async function saveProductRecord(record: PhotoRecord): Promise<PhotoRecord> {
   try {
     const payload = await postJson<ProductRecordsResponse>("/api/product-records", { record });
     const savedRecord = payload.record ?? record;
-    upsertLocalProductRecord(savedRecord);
+    await upsertCachedProductRecord(savedRecord);
     return savedRecord;
   } catch {
     usingLocalRecordStore = true;
-    upsertLocalProductRecord(record);
+    await upsertCachedProductRecord(record);
     return record;
   }
 }
 
 async function deleteProductRecord(id: string): Promise<void> {
-  removeLocalProductRecord(id);
+  await removeCachedProductRecord(id);
   const response = await fetch(`/api/product-records/${encodeURIComponent(id)}`, { method: "DELETE" });
   if (!response.ok) throw new Error("删除记录失败。");
+}
+
+async function readCachedProductRecords(): Promise<PhotoRecord[]> {
+  const indexedRecords = await readIndexedProductRecords();
+  if (indexedRecords.length) return indexedRecords;
+  return readLocalProductRecords();
+}
+
+async function writeCachedProductRecords(nextRecords: PhotoRecord[]) {
+  try {
+    await writeIndexedProductRecords(nextRecords);
+  } catch {
+    writeLocalProductRecords(nextRecords);
+  }
+}
+
+async function upsertCachedProductRecord(record: PhotoRecord) {
+  await writeCachedProductRecords([record, ...(await readCachedProductRecords()).filter((item) => item.id !== record.id)]);
+}
+
+async function removeCachedProductRecord(id: string) {
+  await writeCachedProductRecords((await readCachedProductRecords()).filter((record) => record.id !== id));
+}
+
+async function readIndexedProductRecords(): Promise<PhotoRecord[]> {
+  try {
+    const database = await openProductRecordsDatabase();
+    return await new Promise<PhotoRecord[]>((resolve, reject) => {
+      const request = database.transaction(productRecordsStoreName, "readonly").objectStore(productRecordsStoreName).getAll();
+      request.addEventListener("success", () => {
+        resolve(
+          (request.result as PhotoRecord[])
+            .filter((record) => record?.id && record.originalImageUrl && record.createdAt)
+            .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+        );
+      });
+      request.addEventListener("error", () => reject(request.error ?? new Error("IndexedDB read failed.")));
+    });
+  } catch {
+    return [];
+  }
+}
+
+async function writeIndexedProductRecords(nextRecords: PhotoRecord[]): Promise<void> {
+  const database = await openProductRecordsDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(productRecordsStoreName, "readwrite");
+    const store = transaction.objectStore(productRecordsStoreName);
+    store.clear();
+    nextRecords
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+      .slice(0, 80)
+      .forEach((record) => store.put(record));
+    transaction.addEventListener("complete", () => resolve());
+    transaction.addEventListener("error", () => reject(transaction.error ?? new Error("IndexedDB write failed.")));
+    transaction.addEventListener("abort", () => reject(transaction.error ?? new Error("IndexedDB write aborted.")));
+  });
+}
+
+function openProductRecordsDatabase(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (!("indexedDB" in window)) {
+      reject(new Error("IndexedDB is unavailable."));
+      return;
+    }
+    const request = window.indexedDB.open(productRecordsDbName, 1);
+    request.addEventListener("upgradeneeded", () => {
+      const database = request.result;
+      if (!database.objectStoreNames.contains(productRecordsStoreName)) {
+        database.createObjectStore(productRecordsStoreName, { keyPath: "id" });
+      }
+    });
+    request.addEventListener("success", () => resolve(request.result));
+    request.addEventListener("error", () => reject(request.error ?? new Error("IndexedDB open failed.")));
+  });
 }
 
 function readLocalProductRecords(): PhotoRecord[] {
@@ -1003,14 +1173,6 @@ function writeLocalProductRecords(nextRecords: PhotoRecord[]) {
       // Try again with fewer base64-heavy photos.
     }
   }
-}
-
-function upsertLocalProductRecord(record: PhotoRecord) {
-  writeLocalProductRecords([record, ...readLocalProductRecords().filter((item) => item.id !== record.id)]);
-}
-
-function removeLocalProductRecord(id: string) {
-  writeLocalProductRecords(readLocalProductRecords().filter((record) => record.id !== id));
 }
 
 async function getJson<T extends { error?: string; detail?: string }>(url: string): Promise<T> {
@@ -1130,7 +1292,17 @@ function clamp01(value: number): number {
 }
 
 function isLandscapeCapture(): boolean {
-  return window.matchMedia?.("(orientation: landscape)").matches || window.innerWidth > window.innerHeight;
+  const screenAngle = window.screen.orientation?.angle;
+  const legacyAngle = typeof window.orientation === "number" ? window.orientation : undefined;
+  const visualViewport = window.visualViewport;
+  return (
+    screenAngle === 90 ||
+    screenAngle === 270 ||
+    legacyAngle === 90 ||
+    legacyAngle === -90 ||
+    window.matchMedia?.("(orientation: landscape)").matches ||
+    (visualViewport ? visualViewport.width > visualViewport.height : window.innerWidth > window.innerHeight)
+  );
 }
 
 function syncOrientationState() {
@@ -1148,9 +1320,13 @@ function mustQuery<T extends Element>(selector: string): T {
 }
 
 renderSettings();
+renderCameraZoom();
+syncCameraViewTransform();
 syncOrientationState();
 showCamera();
 window.setTimeout(centerSelectedCameraMode, 80);
 productRecordsLoadPromise = loadProductRecords();
 window.addEventListener("resize", syncOrientationState);
 window.addEventListener("orientationchange", syncOrientationState);
+window.visualViewport?.addEventListener("resize", syncOrientationState);
+window.screen.orientation?.addEventListener("change", syncOrientationState);

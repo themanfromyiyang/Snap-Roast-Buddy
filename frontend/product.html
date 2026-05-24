@@ -35,6 +35,12 @@
             <p>照片已就位</p>
             <button id="startGenerateButton" class="pill-button primary-pill" type="button">开始生成</button>
           </div>
+          <div id="cameraZoomStrip" class="camera-zoom-strip" aria-label="拍摄倍率">
+            <button type="button" data-zoom="0.6">0.6</button>
+            <button type="button" data-zoom="1" class="is-selected">1x</button>
+            <button type="button" data-zoom="2">2</button>
+            <button type="button" data-zoom="3">3</button>
+          </div>
         </div>
 
         <p id="cameraHint" class="camera-hint">按下快门，生成今日照片审判。</p>
@@ -103,7 +109,6 @@
       </section>
 
       <div id="imageLightbox" class="image-lightbox" hidden>
-        <button id="closeImageLightboxButton" class="icon-button lightbox-close" type="button" aria-label="关闭大图">×</button>
         <img id="lightboxImage" alt="原始照片大图" />
       </div>
 

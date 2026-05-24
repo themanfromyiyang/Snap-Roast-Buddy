@@ -689,6 +689,16 @@ pre {
   width: 100vw;
 }
 
+@media (orientation: landscape) {
+  .product-body {
+    --ui-rotation: 90deg;
+  }
+
+  .product-body .product-app {
+    width: 100vw;
+  }
+}
+
 .product-app {
   position: relative;
   width: min(100vw, 430px);
@@ -885,10 +895,31 @@ pre {
   transform: scale(0.96);
 }
 
+@media (orientation: landscape) {
+  .product-body .pill-button,
+  .product-body .settings-upload-button,
+  .product-body .camera-mode-strip button,
+  .product-body .confirm-regenerate-button,
+  .product-body .confirm-cancel-button,
+  .product-body .confirm-delete-button {
+    transform: none;
+  }
+
+  .product-body .pill-button:active,
+  .product-body .settings-upload-button:active,
+  .product-body .camera-mode-strip button:active,
+  .product-body .confirm-regenerate-button:active,
+  .product-body .confirm-cancel-button:active,
+  .product-body .confirm-delete-button:active {
+    transform: scale(0.96);
+  }
+}
+
 .icon-button:focus-visible,
 .round-tool:focus-visible,
 .pill-button:focus-visible,
 .settings-upload-button:focus-visible,
+.camera-zoom-strip button:focus-visible,
 .camera-mode-strip button:focus-visible,
 .confirm-regenerate-button:focus-visible,
 .confirm-cancel-button:focus-visible,
@@ -988,6 +1019,8 @@ pre {
 .viewfinder {
   --viewfinder-top: calc(max(10px, env(safe-area-inset-top)) + 64px);
   --viewfinder-bottom: calc(max(12px, env(safe-area-inset-bottom)) + 176px);
+  --camera-preview-scale: 1;
+  --camera-mirror-scale: 1;
   position: absolute;
   top: var(--viewfinder-top);
   right: auto;
@@ -1014,6 +1047,15 @@ pre {
   --viewfinder-bottom: calc(max(8px, env(safe-area-inset-bottom)) + 112px);
   width: min(100%, calc((100dvh - var(--viewfinder-top) - var(--viewfinder-bottom)) * 1.333));
   aspect-ratio: 4 / 3;
+}
+
+@media (orientation: landscape) {
+  .product-body .viewfinder {
+    --viewfinder-top: calc(max(8px, env(safe-area-inset-top)) + 58px);
+    --viewfinder-bottom: calc(max(8px, env(safe-area-inset-bottom)) + 112px);
+    width: min(100%, calc((100dvh - var(--viewfinder-top) - var(--viewfinder-bottom)) * 1.333));
+    aspect-ratio: 4 / 3;
+  }
 }
 
 .viewfinder:focus,
@@ -1053,6 +1095,11 @@ pre {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.viewfinder video {
+  transform: scaleX(var(--camera-mirror-scale)) scale(var(--camera-preview-scale));
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .viewfinder img[src=""],
@@ -1099,6 +1146,58 @@ pre {
 
 .focus-reticle.is-active {
   animation: focus-reticle-pop 520ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.camera-zoom-strip {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(8px, 5vw, 24px);
+  min-height: 42px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.28);
+  -webkit-backdrop-filter: blur(16px) saturate(1.35);
+  backdrop-filter: blur(16px) saturate(1.35);
+  pointer-events: auto;
+}
+
+.camera-zoom-strip button {
+  display: grid;
+  place-items: center;
+  min-width: 38px;
+  height: 32px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 8px;
+  background: transparent;
+  color: rgba(255, 250, 241, 0.82);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  transition:
+    transform 120ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    background-color 180ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    color 180ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.camera-zoom-strip button:active {
+  transform: scale(0.94);
+}
+
+.camera-zoom-strip button.is-selected {
+  min-width: 36px;
+  height: 36px;
+  background: var(--product-accent);
+  color: #050505;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.42),
+    0 6px 18px rgba(255, 210, 74, 0.18);
 }
 
 .viewfinder-empty {

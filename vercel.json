@@ -3,6 +3,12 @@
   "buildCommand": "npm run build:frontend",
   "outputDirectory": "frontend",
   "installCommand": "npm install",
+  "rewrites": [
+    {
+      "source": "/",
+      "destination": "/product.html"
+    }
+  ],
   "functions": {
     "api/**/*.mjs": {
       "maxDuration": 30
