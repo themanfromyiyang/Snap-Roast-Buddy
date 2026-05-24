@@ -919,6 +919,7 @@ pre {
 .round-tool:focus-visible,
 .pill-button:focus-visible,
 .settings-upload-button:focus-visible,
+.camera-zoom-strip input:focus-visible,
 .camera-zoom-strip button:focus-visible,
 .camera-mode-strip button:focus-visible,
 .confirm-regenerate-button:focus-visible,
@@ -1149,25 +1150,74 @@ pre {
 }
 
 .camera-zoom-strip {
+  --zoom-progress: 16.7%;
   position: absolute;
   right: 12px;
   bottom: 12px;
   left: 12px;
   z-index: 5;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: clamp(8px, 5vw, 24px);
-  min-height: 42px;
-  padding: 5px 10px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.28);
-  -webkit-backdrop-filter: blur(16px) saturate(1.35);
-  backdrop-filter: blur(16px) saturate(1.35);
+  display: grid;
+  gap: 2px;
+  min-height: 50px;
+  padding: 0 8px;
+  background: transparent;
   pointer-events: auto;
 }
 
-.camera-zoom-strip button {
+.camera-zoom-strip input {
+  width: 100%;
+  height: 24px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+}
+
+.camera-zoom-strip input::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, var(--product-accent) 0 var(--zoom-progress), rgba(255, 250, 241, 0.34) var(--zoom-progress) 100%);
+}
+
+.camera-zoom-strip input::-moz-range-track {
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(255, 250, 241, 0.34);
+}
+
+.camera-zoom-strip input::-moz-range-progress {
+  height: 2px;
+  border-radius: 999px;
+  background: var(--product-accent);
+}
+
+.camera-zoom-strip input::-webkit-slider-thumb {
+  width: 18px;
+  height: 18px;
+  margin-top: -8px;
+  appearance: none;
+  border: 2px solid #050505;
+  border-radius: 50%;
+  background: var(--product-accent);
+  box-shadow: 0 0 0 1px rgba(255, 250, 241, 0.72);
+}
+
+.camera-zoom-strip input::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 2px solid #050505;
+  border-radius: 50%;
+  background: var(--product-accent);
+  box-shadow: 0 0 0 1px rgba(255, 250, 241, 0.72);
+}
+
+.camera-zoom-labels {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.camera-zoom-labels button {
   display: grid;
   place-items: center;
   min-width: 38px;
@@ -1177,7 +1227,7 @@ pre {
   padding: 0 8px;
   background: transparent;
   color: rgba(255, 250, 241, 0.82);
-  font-size: 1rem;
+  font-size: 0.98rem;
   font-weight: 700;
   letter-spacing: 0;
   transition:
@@ -1186,18 +1236,14 @@ pre {
     color 180ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
-.camera-zoom-strip button:active {
+.camera-zoom-labels button:active {
   transform: scale(0.94);
 }
 
-.camera-zoom-strip button.is-selected {
-  min-width: 36px;
-  height: 36px;
-  background: var(--product-accent);
-  color: #050505;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.42),
-    0 6px 18px rgba(255, 210, 74, 0.18);
+.camera-zoom-labels button.is-selected {
+  background: transparent;
+  color: var(--product-accent);
+  text-shadow: 0 0 14px rgba(255, 210, 74, 0.36);
 }
 
 .viewfinder-empty {

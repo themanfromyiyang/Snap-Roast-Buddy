@@ -36,10 +36,13 @@
             <button id="startGenerateButton" class="pill-button primary-pill" type="button">开始生成</button>
           </div>
           <div id="cameraZoomStrip" class="camera-zoom-strip" aria-label="拍摄倍率">
-            <button type="button" data-zoom="0.6">0.6</button>
-            <button type="button" data-zoom="1" class="is-selected">1x</button>
-            <button type="button" data-zoom="2">2</button>
-            <button type="button" data-zoom="3">3</button>
+            <input id="cameraZoomSlider" type="range" min="0.6" max="3" step="0.1" value="1" aria-label="滑动调整拍摄倍率" />
+            <div class="camera-zoom-labels" aria-hidden="true">
+              <button type="button" data-zoom="0.6">0.6</button>
+              <button type="button" data-zoom="1" class="is-selected">1x</button>
+              <button type="button" data-zoom="2">2</button>
+              <button type="button" data-zoom="3">3</button>
+            </div>
           </div>
         </div>
 

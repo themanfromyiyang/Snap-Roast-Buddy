@@ -6,6 +6,9 @@ const siliconFlowBaseUrl = process.env.SILICONFLOW_BASE_URL ?? "https://api.sili
 const siliconFlowModel = process.env.SILICONFLOW_MODEL ?? "Pro/zai-org/GLM-4.7";
 const siliconFlowVisionModel = process.env.SILICONFLOW_VISION_MODEL ?? "Pro/moonshotai/Kimi-K2.6";
 const siliconFlowImageEditModel = process.env.SILICONFLOW_IMAGE_EDIT_MODEL ?? "Qwen/Qwen-Image-Edit-2509";
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SECRET_KEY;
+const supabaseRecordsTable = process.env.SUPABASE_PRODUCT_RECORDS_TABLE ?? "product_records";
 
 const textLayoutTypes = ["receipt", "big_text", "pixel_expression"];
 
@@ -203,6 +206,107 @@ export function handleDebugSkills(_req, res) {
   });
 }
 
+export async function handleSupabaseHealth(_req, res) {
+  try {
+    requireSupabaseConfig();
+    const query = new URLSearchParams({
+      select: "id,created_at",
+      order: "created_at.desc",
+      limit: "1"
+    });
+    const response = await fetch(`${supabaseRestBaseUrl()}/${supabaseRecordsTable}?${query}`, {
+      headers: supabaseHeaders()
+    });
+
+    if (!response.ok) return sendSupabaseError(res, response, "Supabase connection failed.");
+
+    const rows = await response.json();
+    return sendJson(res, 200, {
+      ok: true,
+      table: supabaseRecordsTable,
+      sampleCount: Array.isArray(rows) ? rows.length : 0
+    });
+  } catch (error) {
+    return sendServerError(res, error);
+  }
+}
+
+export async function handleListProductRecords(req, res) {
+  try {
+    requireSupabaseConfig();
+    const url = new URL(req.url ?? "/api/product-records", `https://${req.headers.host ?? "localhost"}`);
+    const offset = Math.max(0, Number(url.searchParams.get("offset") ?? 0) || 0);
+    const limitParam = Number(url.searchParams.get("limit") ?? 0) || 0;
+    const limit = Math.max(0, Math.min(limitParam || 24, 24));
+    const query = new URLSearchParams({
+      select: "record",
+      order: "created_at.desc",
+      offset: String(offset),
+      limit: String(limit)
+    });
+    const response = await fetch(`${supabaseRestBaseUrl()}/${supabaseRecordsTable}?${query}`, {
+      headers: supabaseHeaders({ Prefer: "count=exact" })
+    });
+
+    if (!response.ok) return sendSupabaseError(res, response, "Failed to list product records.");
+
+    const rows = await response.json();
+    const total = parseTotalCount(response.headers.get("content-range"), Array.isArray(rows) ? rows.length : 0);
+    return sendJson(res, 200, {
+      records: Array.isArray(rows) ? rows.map((row) => row.record).filter(Boolean) : [],
+      total,
+      offset,
+      limit
+    });
+  } catch (error) {
+    return sendServerError(res, error);
+  }
+}
+
+export async function handleSaveProductRecord(req, res) {
+  try {
+    requireSupabaseConfig();
+    const body = await readJsonBody(req);
+    const record = body.record;
+    if (!isValidProductRecord(record)) return sendJson(res, 400, { error: "Invalid product record." });
+
+    const response = await fetch(`${supabaseRestBaseUrl()}/${supabaseRecordsTable}?on_conflict=id`, {
+      method: "POST",
+      headers: supabaseHeaders({
+        "content-type": "application/json",
+        Prefer: "resolution=merge-duplicates,return=representation"
+      }),
+      body: JSON.stringify([toProductRecordRow(record)])
+    });
+
+    if (!response.ok) return sendSupabaseError(res, response, "Failed to save product record.");
+
+    const rows = await response.json();
+    return sendJson(res, 200, { record: rows?.[0]?.record ?? record });
+  } catch (error) {
+    return sendServerError(res, error);
+  }
+}
+
+export async function handleDeleteProductRecord(req, res) {
+  try {
+    requireSupabaseConfig();
+    const id = cleanText(req.query?.id ?? req.url?.split("/").pop());
+    if (!id) return sendJson(res, 400, { error: "Record id is required." });
+
+    const query = new URLSearchParams({ id: `eq.${id}` });
+    const response = await fetch(`${supabaseRestBaseUrl()}/${supabaseRecordsTable}?${query}`, {
+      method: "DELETE",
+      headers: supabaseHeaders({ Prefer: "return=minimal" })
+    });
+
+    if (!response.ok) return sendSupabaseError(res, response, "Failed to delete product record.");
+    return sendJson(res, 200, { ok: true });
+  } catch (error) {
+    return sendServerError(res, error);
+  }
+}
+
 function buildVisionPrompt() {
   return [
     "请用中文描述这张图片，供“拍立怼 Snap Roast Buddy”生成热敏纸小票。",
@@ -378,6 +482,60 @@ function extractGeneratedImage(data) {
   if (first?.b64_json) return { base64: first.b64_json };
   if (first?.base64) return { base64: first.base64 };
   return { url: "" };
+}
+
+function isValidProductRecord(record) {
+  return Boolean(record?.id && record?.originalImageUrl && record?.createdAt);
+}
+
+function toProductRecordRow(record) {
+  return {
+    id: cleanText(record.id),
+    original_image_url: cleanText(record.originalImageUrl),
+    created_at: record.createdAt,
+    description: cleanText(record.description),
+    layout_type: cleanText(record.layoutType),
+    generation_mode: cleanText(record.generationMode),
+    roast_level: cleanText(record.roastLevel),
+    sketch_mode: cleanText(record.sketchMode),
+    ticket_html: record.ticketHtml ?? null,
+    ticket_text: record.ticketText ?? null,
+    sketch_image_url: record.sketchImageUrl ?? null,
+    caption: record.caption ?? null,
+    record
+  };
+}
+
+function requireSupabaseConfig() {
+  if (supabaseUrl && supabaseServiceRoleKey) return;
+  throw Object.assign(new Error("Missing Supabase config. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Environment Variables."), {
+    statusCode: 500
+  });
+}
+
+function supabaseRestBaseUrl() {
+  return `${supabaseUrl.replace(/\/$/, "")}/rest/v1`;
+}
+
+function supabaseHeaders(extra = {}) {
+  return {
+    apikey: supabaseServiceRoleKey,
+    authorization: `Bearer ${supabaseServiceRoleKey}`,
+    ...extra
+  };
+}
+
+function parseTotalCount(contentRange, fallback) {
+  const total = Number(contentRange?.split("/")?.[1]);
+  return Number.isFinite(total) ? total : fallback;
+}
+
+async function sendSupabaseError(res, response, message) {
+  const detail = await response.text();
+  return sendJson(res, response.status, {
+    error: message,
+    detail: detail.slice(0, 800)
+  });
 }
 
 function parseModelPayload(rawContent) {

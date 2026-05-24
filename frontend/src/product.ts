@@ -111,6 +111,7 @@ const manualStartPanel = mustQuery<HTMLDivElement>("#manualStartPanel");
 const cameraHint = mustQuery<HTMLParagraphElement>("#cameraHint");
 const modeStrip = mustQuery<HTMLDivElement>(".camera-mode-strip");
 const cameraZoomStrip = mustQuery<HTMLDivElement>("#cameraZoomStrip");
+const cameraZoomSlider = mustQuery<HTMLInputElement>("#cameraZoomSlider");
 const shutterButton = mustQuery<HTMLButtonElement>("#shutterButton");
 const galleryButton = mustQuery<HTMLButtonElement>("#galleryButton");
 const latestButton = mustQuery<HTMLButtonElement>("#latestButton");
@@ -267,6 +268,12 @@ cameraZoomStrip.addEventListener("click", (event) => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-zoom]");
   if (!button) return;
   setCameraZoom(Number(button.dataset.zoom) || 1);
+});
+cameraZoomSlider.addEventListener("input", () => {
+  setCameraZoom(Number(cameraZoomSlider.value) || 1, false);
+});
+cameraZoomSlider.addEventListener("change", () => {
+  setCameraZoom(Number(cameraZoomSlider.value) || 1);
 });
 
 imageCarousel.addEventListener("scroll", () => syncAlbumScroll(imageCarousel));
@@ -456,11 +463,11 @@ function showFocusReticle(x: number, y: number) {
   softHaptic();
 }
 
-function setCameraZoom(nextZoom: number) {
+function setCameraZoom(nextZoom: number, shouldPulse = true) {
   cameraZoom = Math.max(0.6, Math.min(3, nextZoom));
   renderCameraZoom();
   void applyCameraZoom();
-  softHaptic();
+  if (shouldPulse) softHaptic();
 }
 
 async function applyCameraZoom() {
@@ -485,9 +492,12 @@ async function applyCameraZoom() {
 }
 
 function renderCameraZoom() {
+  cameraZoomSlider.value = String(cameraZoom);
+  const sliderProgress = ((cameraZoom - 0.6) / (3 - 0.6)) * 100;
+  cameraZoomStrip.style.setProperty("--zoom-progress", `${Math.max(0, Math.min(100, sliderProgress))}%`);
   cameraZoomStrip.querySelectorAll<HTMLButtonElement>("button[data-zoom]").forEach((button) => {
     const value = Number(button.dataset.zoom) || 1;
-    button.classList.toggle("is-selected", Math.abs(value - cameraZoom) < 0.05);
+    button.classList.toggle("is-selected", Math.abs(value - cameraZoom) < 0.12);
   });
 }
 
@@ -833,6 +843,7 @@ function showCamera() {
   playScreenEntrance(cameraScreen, "camera");
   if (cameraStream) {
     cameraFeed.hidden = false;
+    cameraZoomStrip.hidden = false;
     void cameraFeed.play();
   } else {
     void startCamera();
@@ -999,10 +1010,11 @@ async function loadProductRecords() {
     const payload = await getJson<ProductRecordsResponse>(`/api/product-records?offset=0&limit=${productRecordsPageSize}`);
     const remoteRecords = [...(payload.records ?? [])].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
     const localRecords = await readCachedProductRecords();
-    usingLocalRecordStore = remoteRecords.length === 0 && localRecords.length > 0;
-    records = usingLocalRecordStore ? localRecords.slice(0, productRecordsPageSize) : remoteRecords;
-    productRecordsTotal = usingLocalRecordStore ? localRecords.length : payload.total ?? records.length;
-    if (remoteRecords.length) await writeCachedProductRecords(remoteRecords);
+    const mergedRecords = mergeRecords(localRecords, remoteRecords);
+    usingLocalRecordStore = localRecords.length > 0 || remoteRecords.length === 0;
+    records = mergedRecords.slice(0, productRecordsPageSize);
+    productRecordsTotal = Math.max(payload.total ?? 0, mergedRecords.length);
+    if (remoteRecords.length) await writeCachedProductRecords(mergedRecords);
     renderLatestThumb();
     if (!resultScreen.hidden) renderCurrentRecord();
   } catch {
@@ -1088,7 +1100,12 @@ async function writeCachedProductRecords(nextRecords: PhotoRecord[]) {
 }
 
 async function upsertCachedProductRecord(record: PhotoRecord) {
-  await writeCachedProductRecords([record, ...(await readCachedProductRecords()).filter((item) => item.id !== record.id)]);
+  try {
+    await upsertIndexedProductRecord(record);
+  } catch {
+    const nextRecords = [record, ...readLocalProductRecords().filter((item) => item.id !== record.id)];
+    writeLocalProductRecords(nextRecords);
+  }
 }
 
 async function removeCachedProductRecord(id: string) {
@@ -1128,6 +1145,25 @@ async function writeIndexedProductRecords(nextRecords: PhotoRecord[]): Promise<v
     transaction.addEventListener("error", () => reject(transaction.error ?? new Error("IndexedDB write failed.")));
     transaction.addEventListener("abort", () => reject(transaction.error ?? new Error("IndexedDB write aborted.")));
   });
+}
+
+async function upsertIndexedProductRecord(record: PhotoRecord): Promise<void> {
+  const database = await openProductRecordsDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(productRecordsStoreName, "readwrite");
+    transaction.objectStore(productRecordsStoreName).put(record);
+    transaction.addEventListener("complete", () => resolve());
+    transaction.addEventListener("error", () => reject(transaction.error ?? new Error("IndexedDB upsert failed.")));
+    transaction.addEventListener("abort", () => reject(transaction.error ?? new Error("IndexedDB upsert aborted.")));
+  });
+}
+
+function mergeRecords(...recordGroups: PhotoRecord[][]): PhotoRecord[] {
+  const byId = new Map<string, PhotoRecord>();
+  recordGroups.flat().forEach((record) => {
+    if (record?.id) byId.set(record.id, record);
+  });
+  return Array.from(byId.values()).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 }
 
 function openProductRecordsDatabase(): Promise<IDBDatabase> {

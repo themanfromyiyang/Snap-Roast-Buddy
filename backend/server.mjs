@@ -10,7 +10,8 @@ const {
   handleDebugPrompts,
   handleDebugSkills,
   handleGenerateDoodle,
-  handleRoast
+  handleRoast,
+  handleSupabaseHealth
 } = await import("../api/_shared.mjs");
 
 const root = resolve("frontend");
@@ -41,6 +42,7 @@ const server = createServer(async (request, response) => {
   }
   if (request.method === "GET" && url.pathname === "/api/debug/prompts") return handleDebugPrompts(request, response);
   if (request.method === "GET" && url.pathname === "/api/debug/skills") return handleDebugSkills(request, response);
+  if (request.method === "GET" && url.pathname === "/api/supabase-health") return handleSupabaseHealth(request, response);
 
   const requestedPath = url.pathname === "/" ? "/index.html" : decodeURIComponent(url.pathname);
   const filePath = normalize(join(root, requestedPath));
