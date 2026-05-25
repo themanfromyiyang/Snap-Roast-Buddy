@@ -5,7 +5,7 @@
   "installCommand": "npm install",
   "functions": {
     "api/**/*.mjs": {
-      "maxDuration": 30
+      "maxDuration": 60
     }
   }
 }

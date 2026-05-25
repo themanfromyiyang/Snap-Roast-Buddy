@@ -8,6 +8,7 @@ type CaptureOrientation = "portrait" | "landscape";
 type GenerationMode = "auto" | "receipt" | "big_text" | "expression";
 type ProductRoastLevel = RoastLevel | "public_execution";
 type SketchMode = "none" | "top" | "bottom" | "standalone";
+type GenerationPhaseKey = "analyze" | "classify" | "ticket" | "sketch";
 
 type ProductSettings = {
   triggerMode: TriggerMode;
@@ -173,10 +174,30 @@ let productRecordsLoadPromise: Promise<void> | undefined;
 let productRecordsTotal = 0;
 let isLoadingMoreRecords = false;
 let usingLocalRecordStore = false;
+let generationPhases: GenerationPhase[] = [];
+let activeGenerationPhase: GenerationPhase | undefined;
+let generationProgressFrame = 0;
+let displayedGenerationProgress = 0;
 const productRecordsPageSize = 5;
 const localProductRecordsKey = "snap-roast-buddy.product-records.v1";
 const productRecordsDbName = "snap-roast-buddy";
 const productRecordsStoreName = "product-records";
+const generationPhaseDurations: Record<GenerationPhaseKey, number> = {
+  analyze: 30000,
+  classify: 23800,
+  ticket: 13300,
+  sketch: 30000
+};
+
+type GenerationPhase = {
+  key: GenerationPhaseKey;
+  index: number;
+  total: number;
+  startProgress: number;
+  endProgress: number;
+  durationMs: number;
+  startedAt: number;
+};
 
 const funGeneratingMessages = [
   "正在寻找照片里最会抢戏的角落。",
@@ -611,6 +632,7 @@ async function startGenerationFromSelected() {
     cameraHint.textContent = error instanceof Error ? error.message : "生成失败，请换一张照片再试。";
   } finally {
     window.clearInterval(messageTimer);
+    window.cancelAnimationFrame(generationProgressFrame);
     isGenerating = false;
   }
 }
@@ -634,6 +656,7 @@ async function regenerateCurrent() {
     cameraHint.textContent = error instanceof Error ? error.message : "重新生成失败。";
   } finally {
     window.clearInterval(messageTimer);
+    window.cancelAnimationFrame(generationProgressFrame);
     isGenerating = false;
   }
 }
@@ -684,12 +707,12 @@ async function generateSnapRoastResult(imageUrl: string, productSettings: Produc
   const wantsStandaloneSketch = productSettings.sketchMode === "standalone";
   const shouldAddSketch = productSettings.sketchMode === "top" || productSettings.sketchMode === "bottom";
   const needsLayoutChoice = productSettings.generationMode === "auto";
-  const totalSteps = wantsStandaloneSketch ? 1 : 2 + (needsLayoutChoice ? 1 : 0) + (shouldAddSketch ? 1 : 0);
-  let currentStep = 1;
+  startGenerationProgressPlan(productSettings);
 
   if (wantsStandaloneSketch) {
-    setGenerationStage(currentStep, totalSteps, "正在生成漫画……", "正在把照片压成白底黑线。");
+    startGenerationPhase("sketch", "正在生成漫画……", "正在把照片压成白底黑线。");
     const sketchImageUrl = await generateSketch(imageUrl);
+    await completeGenerationPhase("sketch");
     return {
       id: createId(),
       originalImageUrl: imageUrl,
@@ -704,13 +727,12 @@ async function generateSnapRoastResult(imageUrl: string, productSettings: Produc
 
   const sketchPromise = shouldAddSketch ? generateSketch(imageUrl) : undefined;
 
-  setGenerationStage(currentStep, totalSteps, "正在分析图片……", "正在把照片翻译成 Buddy 看得懂的描述。");
+  startGenerationPhase("analyze", "正在分析图片……", "正在把照片翻译成 Buddy 看得懂的描述。");
   const description = await analyzeImage(imageUrl);
-  currentStep += 1;
-  const layoutType = await resolveLayoutType(description, productSettings, currentStep, totalSteps);
-  if (needsLayoutChoice) currentStep += 1;
+  await completeGenerationPhase("analyze");
+  const layoutType = await resolveLayoutType(description, productSettings);
 
-  setGenerationStage(currentStep, totalSteps, "正在生成内容……", "正在写一段能打印出来的评价。");
+  startGenerationPhase("ticket", "正在生成小票……", "正在写一段能打印出来的评价。");
   const roast = await generateRoast(description, layoutType, productSettings.roastLevel);
   const sourceDescription = roast.enhancedDescription || description;
 
@@ -726,11 +748,12 @@ async function generateSnapRoastResult(imageUrl: string, productSettings: Produc
     },
     sharedLayoutSkills
   );
-  currentStep += 1;
+  await completeGenerationPhase("ticket");
   let sketchImageUrl: string | undefined;
   if (sketchPromise) {
-    setGenerationStage(currentStep, totalSteps, "正在生成漫画……", "漫画和内容已并行处理，正在合并最终结果。");
+    startGenerationPhase("sketch", "正在生成漫画……", "漫画和内容已并行处理，正在合并最终结果。");
     sketchImageUrl = await sketchPromise;
+    await completeGenerationPhase("sketch");
   }
 
   return {
@@ -757,16 +780,15 @@ async function analyzeImage(imageUrl: string): Promise<string> {
 
 async function resolveLayoutType(
   description: string,
-  productSettings: ProductSettings,
-  currentStep: number,
-  totalSteps: number
+  productSettings: ProductSettings
 ): Promise<RoastMode> {
   if (productSettings.generationMode === "receipt") return "receipt";
   if (productSettings.generationMode === "big_text") return "big_text";
   if (productSettings.generationMode === "expression") return "pixel_expression";
 
-  setGenerationStage(currentStep, totalSteps, "正在选择排版……", "正在决定该开小票、爆大字，还是摆表情。");
+  startGenerationPhase("classify", "正在选择排版……", "正在决定该开小票、爆大字，还是摆表情。");
   const payload = await postJson<ClassificationResponse>("/api/classify-layout", { photoDescription: description });
+  await completeGenerationPhase("classify");
   return payload.layoutType && payload.layoutType !== "pixel_doodle" ? payload.layoutType : "receipt";
 }
 
@@ -930,7 +952,8 @@ function showGenerating(imageUrl: string) {
   playScreenEntrance(generatingScreen, "generating");
   generatingImage.src = imageUrl;
   window.clearInterval(messageTimer);
-  setGenerationStage(1, 3, "正在准备生成……", "Buddy 正在观察照片。");
+  resetGenerationProgress();
+  setGenerationText(0, 0, "正在准备生成……", "Buddy 正在观察照片。");
   messageTimer = window.setInterval(() => {
     funMessageIndex = (funMessageIndex + 1) % funGeneratingMessages.length;
     generatingMessage.textContent = funGeneratingMessages[funMessageIndex];
@@ -1290,7 +1313,14 @@ function writeLocalProductRecords(nextRecords: PhotoRecord[]) {
 
 async function getJson<T extends { error?: string; detail?: string }>(url: string): Promise<T> {
   const response = await fetch(url);
-  const payload = (await response.json()) as T;
+  const rawText = await response.text();
+  let payload: T;
+  try {
+    payload = (rawText ? JSON.parse(rawText) : {}) as T;
+  } catch {
+    const message = rawText.trim().slice(0, 240) || `HTTP ${response.status}`;
+    throw new Error(response.ok ? `响应不是有效 JSON：${message}` : message);
+  }
   if (!response.ok || payload.error) throw new Error(formatApiError(payload, "读取记录失败。"));
   return payload;
 }
@@ -1338,11 +1368,99 @@ function snapCameraModeToNearest() {
   }
 }
 
-function setGenerationStage(step: number, total: number, title: string, message: string) {
-  generatingStep.textContent = `${step}/${total}`;
+function startGenerationProgressPlan(productSettings: ProductSettings) {
+  const keys: GenerationPhaseKey[] =
+    productSettings.sketchMode === "standalone"
+      ? ["sketch"]
+      : [
+          "analyze",
+          ...(productSettings.generationMode === "auto" ? (["classify"] as GenerationPhaseKey[]) : []),
+          "ticket",
+          ...(productSettings.sketchMode === "top" || productSettings.sketchMode === "bottom" ? (["sketch"] as GenerationPhaseKey[]) : [])
+        ];
+  const totalDuration = keys.reduce((sum, key) => sum + generationPhaseDurations[key], 0);
+  let cursor = 0;
+  generationPhases = keys.map((key, index) => {
+    const durationMs = generationPhaseDurations[key];
+    const startProgress = cursor / totalDuration;
+    cursor += durationMs;
+    return {
+      key,
+      index: index + 1,
+      total: keys.length,
+      startProgress,
+      endProgress: cursor / totalDuration,
+      durationMs,
+      startedAt: 0
+    };
+  });
+  resetGenerationProgress();
+}
+
+function startGenerationPhase(key: GenerationPhaseKey, title: string, message: string) {
+  const phase = generationPhases.find((item) => item.key === key);
+  if (!phase) return;
+  activeGenerationPhase = { ...phase, startedAt: performance.now() };
+  displayedGenerationProgress = Math.max(displayedGenerationProgress, phase.startProgress);
+  setGenerationText(phase.index, phase.total, title, message);
+  window.cancelAnimationFrame(generationProgressFrame);
+  tickGenerationProgress();
+}
+
+function completeGenerationPhase(key: GenerationPhaseKey): Promise<void> {
+  const phase = activeGenerationPhase?.key === key ? activeGenerationPhase : generationPhases.find((item) => item.key === key);
+  if (!phase) return Promise.resolve();
+  activeGenerationPhase = undefined;
+  window.cancelAnimationFrame(generationProgressFrame);
+  return animateGenerationProgressTo(phase.endProgress, 220);
+}
+
+function resetGenerationProgress() {
+  activeGenerationPhase = undefined;
+  displayedGenerationProgress = 0.04;
+  window.cancelAnimationFrame(generationProgressFrame);
+  setGenerationProgress(displayedGenerationProgress);
+}
+
+function tickGenerationProgress() {
+  if (!activeGenerationPhase) return;
+  const phase = activeGenerationPhase;
+  const elapsedRatio = Math.min((performance.now() - phase.startedAt) / phase.durationMs, 1);
+  const phaseSpan = phase.endProgress - phase.startProgress;
+  const heldEnd = phase.endProgress - Math.min(0.012, phaseSpan * 0.18);
+  const nextProgress = phase.startProgress + (heldEnd - phase.startProgress) * elapsedRatio;
+  displayedGenerationProgress = Math.max(displayedGenerationProgress, nextProgress);
+  setGenerationProgress(displayedGenerationProgress);
+  generationProgressFrame = window.requestAnimationFrame(tickGenerationProgress);
+}
+
+function animateGenerationProgressTo(targetProgress: number, durationMs: number): Promise<void> {
+  const startProgress = displayedGenerationProgress;
+  const startedAt = performance.now();
+  return new Promise((resolve) => {
+    const animate = () => {
+      const ratio = Math.min((performance.now() - startedAt) / durationMs, 1);
+      const eased = 1 - Math.pow(1 - ratio, 3);
+      displayedGenerationProgress = startProgress + (targetProgress - startProgress) * eased;
+      setGenerationProgress(displayedGenerationProgress);
+      if (ratio < 1) {
+        generationProgressFrame = window.requestAnimationFrame(animate);
+      } else {
+        resolve();
+      }
+    };
+    animate();
+  });
+}
+
+function setGenerationProgress(progress: number) {
+  progressFill.style.width = `${Math.max(4, Math.min(progress * 100, 100))}%`;
+}
+
+function setGenerationText(step: number, total: number, title: string, message: string) {
+  generatingStep.textContent = total > 0 ? `${step}/${total}` : "0/0";
   generatingTitle.textContent = title;
   generatingMessage.textContent = message;
-  progressFill.style.width = `${Math.max(8, Math.min((step / total) * 100, 96))}%`;
 }
 
 async function postJson<T extends { error?: string; detail?: string }>(url: string, body: unknown): Promise<T> {

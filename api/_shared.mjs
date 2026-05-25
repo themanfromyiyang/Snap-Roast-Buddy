@@ -41,7 +41,7 @@ export async function handleAnalyzeImage(req, res) {
 
     if (!completion.ok) return sendUpstreamError(res, completion, "SiliconFlow vision request failed.");
 
-    const data = await completion.json();
+    const data = await readUpstreamJson(completion, "SiliconFlow image edit returned a non-JSON response.");
     const photoDescription = cleanText(data?.choices?.[0]?.message?.content);
     return sendJson(res, 200, { photoDescription, rawContent: photoDescription });
   } catch (error) {
@@ -633,6 +633,17 @@ async function sendUpstreamError(res, completion, message) {
     error: message,
     detail: detail.slice(0, 800)
   });
+}
+
+async function readUpstreamJson(response, message) {
+  const rawText = await response.text();
+  try {
+    return rawText ? JSON.parse(rawText) : {};
+  } catch {
+    throw Object.assign(new Error(`${message} ${rawText.trim().slice(0, 800)}`), {
+      statusCode: 502
+    });
+  }
 }
 
 function sendServerError(res, error) {

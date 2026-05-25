@@ -1181,6 +1181,18 @@ pre {
   text-shadow: 0 0 14px rgba(255, 210, 74, 0.36);
 }
 
+.camera-zoom-strip:not(.is-choosing) button.is-selected:not(.zoom-major) {
+  min-width: 44px;
+}
+
+.camera-zoom-strip:not(.is-choosing) button.is-selected:not(.zoom-major) .zoom-tick {
+  display: none;
+}
+
+.camera-zoom-strip:not(.is-choosing) button.is-selected:not(.zoom-major)::after {
+  content: attr(aria-label);
+}
+
 .camera-zoom-strip button:active {
   transform: scale(0.94);
 }
