@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>拍立怼 Snap Roast Buddy</title>
     <link rel="stylesheet" href="./styles.css" />
+    <!-- UTF-8 → GBK 编码（codepage 936），用于 ESP32 打印按钮把中文文本透传到打印机 -->
+    <script src="https://cdn.jsdelivr.net/npm/codepage@1.15.0/dist/cptable.full.js"></script>
   </head>
   <body class="product-body">
     <main class="product-app" aria-label="Snap Roast Buddy 产品模式">
@@ -95,6 +97,9 @@
           <div class="result-top-actions">
             <button id="regenerateButton" class="icon-button result-icon-button regenerate-icon-button" type="button" aria-label="重新生成">
               <span aria-hidden="true"></span>
+            </button>
+            <button id="printButton" class="icon-button result-icon-button print-icon-button" type="button" aria-label="发到 ESP32 打印" title="按一下打印 · 长按 1 秒重设 IP">
+              <span aria-hidden="true">🖨</span>
             </button>
             <button id="deleteRecordButton" class="icon-button result-icon-button delete-icon-button" type="button" aria-label="删除">
               <span aria-hidden="true"></span>
