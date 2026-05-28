@@ -3,7 +3,8 @@
     "allow": [
       "PowerShell(New-Item -ItemType Directory -Force -Path \"frontend/vendor\")",
       "PowerShell(Invoke-WebRequest -Uri \"https://cdn.jsdelivr.net/npm/codepage@1.15.0/cputils.js\" -OutFile \"frontend/vendor/cputils.js\" -UseBasicParsing)",
-      "PowerShell(Invoke-WebRequest -Uri \"https://cdn.jsdelivr.net/npm/codepage@1.15.0/bits/936.js\" -OutFile \"frontend/vendor/cp936.js\" -UseBasicParsing)"
+      "PowerShell(Invoke-WebRequest -Uri \"https://cdn.jsdelivr.net/npm/codepage@1.15.0/bits/936.js\" -OutFile \"frontend/vendor/cp936.js\" -UseBasicParsing)",
+      "Bash(git rev-list *)"
     ]
   }
 }
