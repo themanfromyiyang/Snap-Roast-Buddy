@@ -272,6 +272,8 @@ POST   /api/generate-doodle
 GET    /api/product-records
 POST   /api/product-records
 DELETE /api/product-records/:id
+POST   /api/print-bitmap         # 浏览器上传 1bpp 位图，返回一次性 token
+GET    /api/print-bitmap?token=  # ESP32 拉位图字节流（消费一次后失效）
 GET    /api/debug/prompts
 GET    /api/debug/skills
 GET    /api/supabase-health
@@ -306,9 +308,35 @@ local-photos/
 
 不要提交真实 API key、Supabase service role key、本地照片或本地生成记录。
 
-## 后续硬件接入方向
+## ESP32 WiFi 打印（v2 位图链路）
 
-- `POST /api/print`：接收 layout JSON 或 bitmap。
-- ESC/POS 转换：把 `LayoutDocument` 转成热敏打印机位图数据。
-- ESP32 通信：通过 HTTP、WebSocket、BLE 或串口转发打印任务。
-- 打印队列：缓存失败任务，支持重试和状态回传。
+完整链路：
+
+```
+浏览器(HTTPS)             Vercel                Supabase Storage         ESP32(STA)         打印机
+   ① canvas 渲 1bpp 位图
+   ② POST /api/print-bitmap ──► 存 print-bitmaps/<token>.bin
+                                返回 {token}
+   ③ window.open(http://<esp32-ip>/print-image?token=...)
+                                                                       ④ 收到 GET
+                                                                          HTTPS 拉位图
+                                                                          ESC/POS GS v 0 ────► 出纸
+                                                                       ⑤ 返回 ✅ HTML 页
+```
+
+- 手机和 ESP32 用 **手机热点**联通（ESP32 作 STA 连手机热点）
+- 位图通过 Vercel/Supabase 中转，避开 HTTPS→HTTP 的 mixed content 限制
+- token 是 UUID v4，**一次性消费**（ESP32 拉取成功后自动删除）
+- 中文/像素图/漫画贴纸都能打，因为发的是位图不是文本
+
+详细文档：
+
+- [docs/supabase-print-bitmaps-bucket.md](docs/supabase-print-bitmaps-bucket.md) — Supabase Storage 配置
+- [hardware/esp32/snap_roast_print/snap_roast_print.ino](hardware/esp32/snap_roast_print/snap_roast_print.ino) — ESP32 固件
+
+## 后续硬件方向
+
+- 真正的双向状态回传（纸尽、过热）
+- 19200 / 38400 高波特率，缩短打印时间
+- ESP32 OTA 升级
+- BLE / Cloud 路径补全（非 WiFi 场景）

@@ -10,6 +10,7 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceRoleKey =
   process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SECRET_KEY ?? process.env.UPABASE_SERVICE_ROLE_KEY;
 const supabaseRecordsTable = process.env.SUPABASE_PRODUCT_RECORDS_TABLE ?? "product_records";
+const supabasePrintBitmapsBucket = process.env.SUPABASE_PRINT_BITMAPS_BUCKET ?? "print-bitmaps";
 
 const textLayoutTypes = ["receipt", "big_text", "pixel_expression"];
 
@@ -288,6 +289,141 @@ export async function handleSaveProductRecord(req, res) {
   } catch (error) {
     return sendServerError(res, error);
   }
+}
+
+// === 位图打印中转 (Supabase Storage) =============================
+// 流程：
+//   1) 浏览器 POST /api/print-bitmap   body=raw bytes (4 字节 W/H 头 + 1bpp 位图)
+//      → 写到 print-bitmaps/<token>.bin，返回 { token, expiresInSeconds }
+//   2) ESP32 GET /api/print-bitmap?token=xxx
+//      → 从 storage 读字节流，回 application/octet-stream
+//      → 读成功后异步删除（一次性消费，防止重复打印）
+// 安全模型：token 是 UUID v4，128-bit 熵；LAN 内不可猜。无登录，无频控（v1）。
+// 清理：成功消费的对象自动删；未消费的留在 bucket 里，建议在 Supabase 控制台
+//      配 Storage 生命周期或定期手动清理。
+//
+// 这一节是新增功能，路由文件在 api/print-bitmap.mjs。
+
+const PRINT_TOKEN_TTL_SECONDS = 300;
+const PRINT_BITMAP_MAX_BYTES = 200 * 1024;   // 200KB，远大于典型 38KB 全幅小票
+const PRINT_BITMAP_MIN_BYTES = 5;             // 4 字节头 + 至少 1 字节位图
+
+export async function handlePrintBitmapUpload(req, res) {
+  try {
+    requireSupabaseConfig();
+    const body = await readBinaryBody(req);
+
+    if (!body || body.length < PRINT_BITMAP_MIN_BYTES) {
+      return sendJson(res, 400, { error: "Body too small. Need 4 bytes header (W,H little endian) + bitmap." });
+    }
+    if (body.length > PRINT_BITMAP_MAX_BYTES) {
+      return sendJson(res, 413, { error: `Bitmap too large (${body.length} > ${PRINT_BITMAP_MAX_BYTES} bytes).` });
+    }
+
+    const widthDots = body[0] | (body[1] << 8);
+    const heightDots = body[2] | (body[3] << 8);
+    if (widthDots !== 384) {
+      return sendJson(res, 400, { error: `Unsupported widthDots=${widthDots} (only 384 supported in v1).` });
+    }
+    const expectedBitmap = (widthDots / 8) * heightDots;
+    if (body.length - 4 !== expectedBitmap) {
+      return sendJson(res, 400, {
+        error: `Bitmap byte mismatch. Got ${body.length - 4}, expected ${expectedBitmap} for ${widthDots}x${heightDots}.`
+      });
+    }
+
+    const token = generateUuidV4();
+    const objectKey = `${token}.bin`;
+    const uploadUrl = `${supabaseStorageBaseUrl()}/object/${supabasePrintBitmapsBucket}/${objectKey}`;
+    const uploadRes = await fetch(uploadUrl, {
+      method: "POST",
+      headers: supabaseHeaders({
+        "content-type": "application/octet-stream",
+        "x-upsert": "true"
+      }),
+      body
+    });
+
+    if (!uploadRes.ok) return sendSupabaseError(res, uploadRes, "Failed to upload bitmap to storage.");
+
+    return sendJson(res, 200, {
+      token,
+      expiresInSeconds: PRINT_TOKEN_TTL_SECONDS,
+      widthDots,
+      heightDots,
+      bytes: body.length - 4
+    });
+  } catch (error) {
+    return sendServerError(res, error);
+  }
+}
+
+export async function handlePrintBitmapFetch(req, res) {
+  try {
+    requireSupabaseConfig();
+    const url = new URL(req.url ?? "/api/print-bitmap", `https://${req.headers.host ?? "localhost"}`);
+    const token = cleanText(url.searchParams.get("token"));
+    if (!token || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(token)) {
+      return sendJson(res, 400, { error: "Invalid token format." });
+    }
+
+    const objectKey = `${token}.bin`;
+    const fetchUrl = `${supabaseStorageBaseUrl()}/object/${supabasePrintBitmapsBucket}/${objectKey}`;
+    const fetchRes = await fetch(fetchUrl, { headers: supabaseHeaders() });
+
+    if (!fetchRes.ok) {
+      const status = fetchRes.status === 404 ? 410 : 502;
+      const message = fetchRes.status === 404 ? "Token expired or already consumed." : "Failed to fetch bitmap.";
+      return sendJson(res, status, { error: message });
+    }
+
+    const ab = await fetchRes.arrayBuffer();
+    const buf = Buffer.from(ab);
+
+    // 一次性消费：响应发出前 fire-and-forget 删除文件，让重复请求拿不到
+    void fetch(fetchUrl, {
+      method: "DELETE",
+      headers: supabaseHeaders({ Prefer: "return=minimal" })
+    }).catch(() => {});
+
+    res.statusCode = 200;
+    res.setHeader("content-type", "application/octet-stream");
+    res.setHeader("content-length", String(buf.length));
+    res.setHeader("cache-control", "no-store");
+    res.end(buf);
+  } catch (error) {
+    return sendServerError(res, error);
+  }
+}
+
+function supabaseStorageBaseUrl() {
+  return `${supabaseUrl.replace(/\/$/, "")}/storage/v1`;
+}
+
+function generateUuidV4() {
+  // 优先用 Node 内置；Vercel Node runtime 全支持
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+  // 兜底：手写 v4（生产环境不会走到这里）
+  const b = new Uint8Array(16);
+  for (let i = 0; i < 16; i++) b[i] = Math.floor(Math.random() * 256);
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = Array.from(b, (x) => x.toString(16).padStart(2, "0"));
+  return `${h.slice(0, 4).join("")}-${h.slice(4, 6).join("")}-${h.slice(6, 8).join("")}-${h.slice(8, 10).join("")}-${h.slice(10, 16).join("")}`;
+}
+
+async function readBinaryBody(req) {
+  if (req.body && Buffer.isBuffer(req.body)) return req.body;
+  if (req.body instanceof Uint8Array) return Buffer.from(req.body);
+  if (typeof req.body === "string") return Buffer.from(req.body, "binary");
+
+  const chunks = [];
+  for await (const chunk of req) {
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
 }
 
 export async function handleDeleteProductRecord(req, res) {

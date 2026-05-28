@@ -1,5 +1,6 @@
 import { generateRoastLayoutWithSkills } from "../../packages/layout/src/generateRoastLayoutWithSkills.js";
 import type { LayoutType, RoastLevel, RoastMode } from "../../packages/layout/src/types.js";
+import { rasterizeRecordForPrint, recordHasPrintableContent } from "./rasterizeForPrint.js";
 import { createStandaloneMangaTicket, createTicketHtmlWithManga, layoutSkills as sharedLayoutSkills } from "./sharedProductFlow.js";
 
 type ProductLayoutType = "receipt" | "big_text" | "expression" | "sketch";
@@ -809,20 +810,22 @@ async function generateSketch(imageUrl: string): Promise<string> {
   return result;
 }
 
-// === ESP32 WiFi 打印 ============================================
-// 走"HTTPS 顶层跳转到 http://<ip>/print?text=..."的路子，
-// 因为浏览器禁止 HTTPS 页面 fetch 一个 HTTP 资源（混合内容），
-// 但允许顶层导航。新标签页打开，用户打印完关闭即可。
+// === ESP32 WiFi 位图打印 ========================================
+// 链路：
+//   1) 用户点🖨
+//   2) rasterizeRecordForPrint(record) → 4 字节 W/H 头 + 1bpp 位图字节流
+//   3) POST /api/print-bitmap  (Vercel)  → 返回 token
+//   4) window.open(http://<esp32-ip>/print-image?token=...)
+//   5) ESP32 走 HTTPS 自行拉位图 → ESC/POS GS v 0 写打印机 → 返回 ✅ HTML
 //
-// 文本走 UTF-8 → GBK（codepage 936）转码，再用手工 %XX 形式 URL 编码，
-// 因为 encodeURIComponent 只会按 UTF-8 处理，给打印机喂 UTF-8 会乱码。
-declare const cptable: { utils: { encode: (cp: number, text: string) => number[] } } | undefined;
+// 走顶层跳转而非 fetch：浏览器禁止 HTTPS 页面 fetch HTTP 资源（混合内容），
+// 但允许顶层导航到 HTTP 地址。
 
 const ESP32_IP_STORAGE_KEY = "snap_roast_esp32_ip";
 const PRINT_LONG_PRESS_MS = 900;
 
-function hasPrintableText(record: PhotoRecord): boolean {
-  return Boolean((record.ticketText ?? "").trim());
+function hasPrintableContent(record: PhotoRecord): boolean {
+  return recordHasPrintableContent(record);
 }
 
 function getStoredEsp32Ip(): string {
@@ -851,57 +854,65 @@ function askForEsp32Ip(current: string): string {
     "请输入 ESP32 的 IP（在 Arduino 串口监视器里能看到，一般是 172.20.10.X）。\n" +
     "留空可清除已保存的 IP。";
   const next = window.prompt(hint, current);
-  if (next === null) return current;        // 用户取消，保持原值
+  if (next === null) return current;
   const normalized = normalizeIp(next);
   setStoredEsp32Ip(normalized);
   return normalized;
 }
 
-function encodeTextAsGbkPercent(text: string): string {
-  if (typeof cptable === "undefined" || !cptable?.utils) {
-    throw new Error("GBK 编码库 (cptable) 未加载，检查 index.html 的 CDN 脚本");
+type PrintBitmapUploadResponse = {
+  token?: string;
+  expiresInSeconds?: number;
+  widthDots?: number;
+  heightDots?: number;
+  bytes?: number;
+  error?: string;
+};
+
+async function uploadPrintBitmap(payload: Uint8Array): Promise<string> {
+  // 直接传 ArrayBuffer，避开 TS 5.7+ 对 Uint8Array<SharedArrayBuffer> 的过度警告。
+  const buffer = payload.buffer.slice(payload.byteOffset, payload.byteOffset + payload.byteLength);
+  const response = await fetch("/api/print-bitmap", {
+    method: "POST",
+    headers: { "content-type": "application/octet-stream" },
+    body: buffer as ArrayBuffer
+  });
+  const data = (await response.json().catch(() => ({}))) as PrintBitmapUploadResponse;
+  if (!response.ok || !data.token) {
+    throw new Error(data.error || `位图上传失败：HTTP ${response.status}`);
   }
-  const bytes = cptable.utils.encode(936, text);
-  let result = "";
-  for (let i = 0; i < bytes.length; i++) {
-    const b = bytes[i] & 0xff;
-    result += "%" + b.toString(16).padStart(2, "0").toUpperCase();
-  }
-  return result;
+  return data.token;
 }
 
-function getPrintableTextFromCurrentRecord(): string {
+async function triggerPrint(): Promise<void> {
   const record = records[currentRecordIndex];
-  if (!record) return "";
-  return (record.ticketText ?? "").trim();
-}
-
-function triggerPrint(): void {
-  const text = getPrintableTextFromCurrentRecord();
-  if (!text) {
-    window.alert("当前小票没有可打印文本（可能是漫画贴纸模式）。");
+  if (!record || !hasPrintableContent(record)) {
+    window.alert("当前记录没有可打印内容。");
     return;
   }
 
   let ip = getStoredEsp32Ip();
   if (!ip) ip = askForEsp32Ip("");
-  if (!ip) return;   // 用户没填，取消
+  if (!ip) return;
 
-  let encoded: string;
-  try {
-    encoded = encodeTextAsGbkPercent(text);
-  } catch (err) {
-    window.alert((err instanceof Error ? err.message : String(err)) + "。\n刷新页面重试。");
-    return;
-  }
-
-  const url = `http://${ip}/print?text=${encoded}`;
+  // 关键：用户点击是同步手势，window.open 必须在 await 之前调用，
+  // 否则 iOS Safari 会判定"非用户触发"拦掉。先开空白页占住手势，
+  // rasterize + upload 完了再 location.replace 真正的打印 URL。
+  const popup = window.open("", "_blank");
   softHaptic();
-  // 新标签页打开，避免离开当前相册页；浏览器会提示"不安全"是 HTTPS→HTTP 的正常行为
-  const opened = window.open(url, "_blank");
-  if (!opened) {
-    // 浏览器拦了 popup（少见，因为这是用户手势触发），降级到当前页跳转
-    window.location.href = url;
+
+  try {
+    const bitmap = await rasterizeRecordForPrint(record);
+    const token = await uploadPrintBitmap(bitmap.payload);
+    const url = `http://${ip}/print-image?token=${token}`;
+    if (popup && !popup.closed) {
+      popup.location.replace(url);
+    } else {
+      window.location.href = url;
+    }
+  } catch (err) {
+    popup?.close();
+    window.alert(err instanceof Error ? err.message : String(err));
   }
 }
 
@@ -933,7 +944,7 @@ function attachPrintButtonHandlers(): void {
       longPressFired = false;
       return;
     }
-    triggerPrint();
+    void triggerPrint();
   });
 }
 // === /ESP32 WiFi 打印 ============================================
@@ -956,7 +967,7 @@ function renderCurrentRecord() {
   resultOriginalImage.src = record.originalImageUrl;
   regenerateButton.disabled = false;
   deleteRecordButton.disabled = false;
-  printButton.disabled = !hasPrintableText(record);
+  printButton.disabled = !hasPrintableContent(record);
   fixedPrinterSlot.hidden = false;
   updateResultMeta(record);
   renderAlbumSlides();
