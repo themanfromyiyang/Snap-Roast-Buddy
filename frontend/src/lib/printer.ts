@@ -149,7 +149,7 @@ export function concatBytes(...arrays: Uint8Array[]) {
   return result;
 }
 
-async function elementToCanvas(element: HTMLElement) {
+export async function elementToCanvas(element: HTMLElement) {
   const existingCanvas = element instanceof HTMLCanvasElement ? element : element.querySelector("canvas");
   if (existingCanvas) {
     const copy = document.createElement("canvas");
