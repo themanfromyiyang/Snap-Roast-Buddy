@@ -2,6 +2,7 @@ import { generateRoastLayoutWithSkills } from "../../packages/layout/src/generat
 import type { LayoutType, RoastLevel, RoastMode } from "../../packages/layout/src/types.js";
 import { createStandaloneMangaTicket, createTicketHtmlWithManga, layoutSkills as sharedLayoutSkills } from "./sharedProductFlow.js";
 import { destroyReceiptPreviews, updateReceiptPreview } from "./p5ReceiptRenderer.js";
+import { bytesToBase64, canvasToEscPosRaster, elementToCanvas } from "./lib/printer.js";
 
 type ProductLayoutType = "receipt" | "big_text" | "expression" | "sketch";
 type TriggerMode = "auto" | "manual";
@@ -820,21 +821,16 @@ async function generateSketch(imageUrl: string): Promise<string> {
   return result;
 }
 
-// === ESP32 WiFi 打印 ============================================
-// 走"HTTPS 顶层跳转到 http://<ip>/print?text=..."的路子，
-// 因为浏览器禁止 HTTPS 页面 fetch 一个 HTTP 资源（混合内容），
-// 但允许顶层导航。新标签页打开，用户打印完关闭即可。
+// === ESP32 WiFi 打印（位图路径）======================================
+// HTTPS 页面不能 fetch 一个 HTTP 资源（mixed content），但顶层 form 提交
+// 浏览器放行（会弹一次"提交不安全表单"警告）。所以走：
+//   小票 DOM → canvas → ESC/POS GS v 0 字节 → 分块 base64 → 隐藏 form POST 顶层跳转
+// ESP32 端流式 base64 解码，直接喂打印机，整张小票位图上纸。
 //
-// 文本走 UTF-8 → GBK（codepage 936）转码，再用手工 %XX 形式 URL 编码，
-// 因为 encodeURIComponent 只会按 UTF-8 处理，给打印机喂 UTF-8 会乱码。
-declare const cptable: { utils: { encode: (cp: number, text: string) => number[] } } | undefined;
+// 旧文本透传通道（GET /print?text=）保留在 print-test.html 里调试用，本页面不再走那条。
 
 const ESP32_IP_STORAGE_KEY = "snap_roast_esp32_ip";
 const PRINT_LONG_PRESS_MS = 900;
-
-function hasPrintableText(record: PhotoRecord): boolean {
-  return Boolean((record.ticketText ?? "").trim());
-}
 
 function getStoredEsp32Ip(): string {
   try {
@@ -862,57 +858,70 @@ function askForEsp32Ip(current: string): string {
     "请输入 ESP32 的 IP（在 Arduino 串口监视器里能看到，一般是 172.20.10.X）。\n" +
     "留空可清除已保存的 IP。";
   const next = window.prompt(hint, current);
-  if (next === null) return current;        // 用户取消，保持原值
+  if (next === null) return current;
   const normalized = normalizeIp(next);
   setStoredEsp32Ip(normalized);
   return normalized;
 }
 
-function encodeTextAsGbkPercent(text: string): string {
-  if (typeof cptable === "undefined" || !cptable?.utils) {
-    throw new Error("GBK 编码库 (cptable) 未加载，检查 index.html 的 CDN 脚本");
-  }
-  const bytes = cptable.utils.encode(936, text);
-  let result = "";
-  for (let i = 0; i < bytes.length; i++) {
-    const b = bytes[i] & 0xff;
-    result += "%" + b.toString(16).padStart(2, "0").toUpperCase();
-  }
-  return result;
+function getCurrentTicketElement(): HTMLElement | null {
+  // ticketLongPreview 是当前记录渲染出的那张小票，product-paper 是纸面外壳
+  const paper = ticketLongPreview.querySelector<HTMLElement>(".product-paper");
+  return paper ?? null;
 }
 
-function getPrintableTextFromCurrentRecord(): string {
-  const record = records[currentRecordIndex];
-  if (!record) return "";
-  return (record.ticketText ?? "").trim();
+async function buildRasterBase64(element: HTMLElement): Promise<string> {
+  const canvas = await elementToCanvas(element);
+  const raster = canvasToEscPosRaster(canvas, 180);
+  return bytesToBase64(raster);
 }
 
-function triggerPrint(): void {
-  const text = getPrintableTextFromCurrentRecord();
-  if (!text) {
-    window.alert("当前小票没有可打印文本（可能是漫画贴纸模式）。");
+function submitRasterToEsp32(ip: string, base64: string): void {
+  // 顶层 form POST，浏览器会弹一次警告，用户确认后跳转到 ESP32 的"已打印"页
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.action = `http://${ip}/print-raster`;
+  form.enctype = "application/x-www-form-urlencoded";
+  form.acceptCharset = "utf-8";
+  // 用 target=_blank 新标签页打开，避免离开当前相册页（跟原文本路径行为一致）
+  form.target = "_blank";
+
+  const input = document.createElement("input");
+  input.type = "hidden";
+  input.name = "data";
+  input.value = base64;
+  form.appendChild(input);
+
+  document.body.appendChild(form);
+  form.submit();
+  // 提交完移除，避免 DOM 污染
+  document.body.removeChild(form);
+}
+
+async function triggerPrint(): Promise<void> {
+  const ticketEl = getCurrentTicketElement();
+  if (!ticketEl) {
+    window.alert("当前没有可打印的小票。");
     return;
   }
 
   let ip = getStoredEsp32Ip();
   if (!ip) ip = askForEsp32Ip("");
-  if (!ip) return;   // 用户没填，取消
+  if (!ip) return;
 
-  let encoded: string;
+  let base64: string;
   try {
-    encoded = encodeTextAsGbkPercent(text);
+    base64 = await buildRasterBase64(ticketEl);
   } catch (err) {
-    window.alert((err instanceof Error ? err.message : String(err)) + "。\n刷新页面重试。");
+    window.alert("生成打印位图失败：" + (err instanceof Error ? err.message : String(err)));
     return;
   }
 
-  const url = `http://${ip}/print?text=${encoded}`;
   softHaptic();
-  // 新标签页打开，避免离开当前相册页；浏览器会提示"不安全"是 HTTPS→HTTP 的正常行为
-  const opened = window.open(url, "_blank");
-  if (!opened) {
-    // 浏览器拦了 popup（少见，因为这是用户手势触发），降级到当前页跳转
-    window.location.href = url;
+  try {
+    submitRasterToEsp32(ip, base64);
+  } catch (err) {
+    window.alert("提交到 ESP32 失败：" + (err instanceof Error ? err.message : String(err)));
   }
 }
 
@@ -939,15 +948,14 @@ function attachPrintButtonHandlers(): void {
 
   printButton.addEventListener("click", (event) => {
     if (longPressFired) {
-      // 长按已经触发过 IP 重设，吃掉这次 click
       event.preventDefault();
       longPressFired = false;
       return;
     }
-    triggerPrint();
+    void triggerPrint();
   });
 }
-// === /ESP32 WiFi 打印 ============================================
+// === /ESP32 WiFi 打印（位图路径）=====================================
 
 function renderCurrentRecord() {
   const record = records[currentRecordIndex];
@@ -970,7 +978,7 @@ if (hydratedRecord) resultOriginalImage.src = hydratedRecord.originalImageUrl;
 regenerateButton.disabled = !hydratedRecord;
 deleteRecordButton.disabled = !record;
 const printableRecord = hydratedRecord ?? record;
-printButton.disabled = !printableRecord || !hasPrintableText(printableRecord);
+printButton.disabled = !printableRecord;
   fixedPrinterSlot.hidden = false;
   updateResultMeta(hydratedRecord ?? record);
   renderAlbumSlides();
