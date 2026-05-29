@@ -216,13 +216,17 @@ static void handlePrintBridge() {
   server.send(200, "text/html; charset=utf-8", html);
 }
 
-// ---- 分块流式打印的会话状态 ----
-// ESP32 Arduino WebServer 单次 text/plain body 超 ~10KB 阈值后，arg("plain") 会
-// 拿到空串（reserve 失败 / 内部限制），所以前端要把 base64 拆成 8KB 块顺序发。
-// ESP32 不累积大数据：每块来了立刻 base64 流式解码并 Printer.write，靠 9600bps
-// 串口自然限速。session 用最简：seq=0 时开始打印（ESC@ 初始化），final=1 时走纸。
-static int g_rasterLastSeq = -1;   // 上一块的 seq，初始 -1。校验顺序用。
-static size_t g_rasterTotalBytes = 0;
+// ---- 分块累积式打印的会话状态 ----
+// 之前每块来了立刻解码+Printer.write，但块之间有 HTTP roundtrip 的几十毫秒
+// 空隙。9600bps 串口本身就慢，热敏打印机对 GS v 0 这种多字节栅格命令有
+// "等数据超时"——中途停太久就以为命令结束，后续字节被当文本解释，
+// 导致打印错位、行重叠、看着糊。
+//
+// 正解：每块只追加到累加器（不发打印机），final=1 那块到齐后，一次性把全部
+// base64 解码 + 连续 Printer.write。9600bps 串口一气吐完，没有断流。
+// base64 ~74KB，ESP32-S3 N16R8 内存够。
+static String g_rasterAccum;
+static int g_rasterLastSeq = -1;
 
 // ---- POST /print-raster-chunk?seq=N&final=0|1 ----
 // body：8KB 的 base64 文本块（text/plain，落 arg("plain")）
@@ -241,13 +245,11 @@ static void handleRasterChunk() {
   Serial.println(isFinal ? 1 : 0);
 
   if (seq == 0) {
-    // 新打印任务：初始化打印机，重置 session
-    Serial.println("[chunk] 开始新打印任务");
-    Printer.write(0x1B);
-    Printer.write(0x40);
-    delay(50);
+    // 新任务：清空累加器
+    g_rasterAccum = "";
+    g_rasterAccum.reserve(120000);   // 上限给够，避免边追加边 realloc
     g_rasterLastSeq = -1;
-    g_rasterTotalBytes = 0;
+    Serial.println("[chunk] 开始新任务，清空累加器");
   }
 
   if (seq != g_rasterLastSeq + 1) {
@@ -259,17 +261,31 @@ static void handleRasterChunk() {
     return;
   }
 
-  size_t printedThisChunk = streamBase64ToPrinter(chunk);
-  g_rasterTotalBytes += printedThisChunk;
+  g_rasterAccum += chunk;
   g_rasterLastSeq = seq;
+  Serial.print("[chunk] 累加器当前长度: ");
+  Serial.println(g_rasterAccum.length());
 
   if (isFinal) {
+    // 全部到齐，一次性解码 + 连续打印
+    Serial.print("[chunk] 全部块到齐，base64 总长度 ");
+    Serial.println(g_rasterAccum.length());
+
+    // ESC @ 初始化（放在 final 时做，不在 seq=0 做——避免中途收到错块后
+    // 打印机已经初始化、但数据没来，下次连进来又被初始化一次）
+    Printer.write(0x1B);
+    Printer.write(0x40);
+    delay(50);
+
+    size_t printedBytes = streamBase64ToPrinter(g_rasterAccum);
+
     // 走纸结束
     Printer.write('\n');
     Printer.write('\n');
     Printer.write('\n');
+
     Serial.print("[chunk] 完成，总解码字节: ");
-    Serial.println(g_rasterTotalBytes);
+    Serial.println(printedBytes);
 
     String html;
     html.reserve(512);
@@ -283,15 +299,17 @@ static void handleRasterChunk() {
     html += "</style></head><body>";
     html += "<div class=\"ok\">✅ 已打印</div>";
     html += "<h1>位图已发到打印机</h1>";
-    html += "<div class=\"panel\"><div class=\"meta\">总解码字节数：" + String(g_rasterTotalBytes) + "</div></div>";
+    html += "<div class=\"panel\"><div class=\"meta\">base64 总长度：" + String(g_rasterAccum.length()) + "</div>";
+    html += "<div class=\"meta\">解码字节数：" + String(printedBytes) + "</div></div>";
     html += "<a href=\"javascript:history.back()\">← 返回</a>";
     html += "</body></html>";
     server.send(200, "text/html; charset=utf-8", html);
 
+    // 释放累加器
+    g_rasterAccum = "";
     g_rasterLastSeq = -1;
-    g_rasterTotalBytes = 0;
   } else {
-    server.send(200, "application/json", "{\"ok\":true,\"seq\":" + String(seq) + ",\"printedBytes\":" + String(printedThisChunk) + "}");
+    server.send(200, "application/json", "{\"ok\":true,\"seq\":" + String(seq) + ",\"accumLen\":" + String(g_rasterAccum.length()) + "}");
   }
 }
 
