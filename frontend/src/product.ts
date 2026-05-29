@@ -865,9 +865,9 @@ function askForEsp32Ip(current: string): string {
 }
 
 function getCurrentTicketElement(): HTMLElement | null {
-  // ticketLongPreview 是当前记录渲染出的那张小票，product-paper 是纸面外壳
-  const paper = ticketLongPreview.querySelector<HTMLElement>(".product-paper");
-  return paper ?? null;
+  const slides = imageCarousel.querySelectorAll<HTMLElement>(".album-slide");
+  const currentSlide = slides[currentRecordIndex];
+  return currentSlide?.querySelector<HTMLElement>(".product-paper") ?? null;
 }
 
 async function buildRasterBase64(element: HTMLElement): Promise<string> {
