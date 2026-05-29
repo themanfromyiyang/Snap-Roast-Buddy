@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ESP32 打印验证 · Snap Roast Buddy</title>
+    <!-- SheetJS codepage 库：浏览器没原生 GBK 编码器，靠它把 UTF-8 文本转 GBK 双字节
+         本地托管避免国内 CDN 不稳；先加载码表数据，再加载 utils -->
+    <script src="./vendor/cp936.js"></script>
+    <script src="./vendor/cputils.js"></script>
+    <style>
+      :root { color-scheme: light; }
+      * { box-sizing: border-box; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+        margin: 0;
+        padding: 20px;
+        background: #f5f5f7;
+        color: #111;
+      }
+      main { max-width: 520px; margin: 0 auto; }
+      h1 { margin: 0 0 4px 0; font-size: 22px; }
+      .sub { color: #666; font-size: 13px; line-height: 1.6; margin-bottom: 20px; }
+      .card {
+        background: #fff;
+        border-radius: 10px;
+        padding: 16px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+        margin-bottom: 14px;
+      }
+      label { display: block; font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+      input, textarea {
+        width: 100%;
+        padding: 10px 12px;
+        font-size: 15px;
+        border-radius: 8px;
+        border: 1px solid #d0d0d5;
+        background: #fcfcfd;
+        font-family: inherit;
+      }
+      textarea { min-height: 160px; resize: vertical; font-family: ui-monospace, Menlo, monospace; font-size: 14px; }
+      .row { display: flex; gap: 8px; }
+      .row > input { flex: 1; }
+      button {
+        padding: 10px 14px;
+        font-size: 15px;
+        border-radius: 8px;
+        border: 0;
+        cursor: pointer;
+        font-weight: 600;
+      }
+      .primary { background: #111; color: #fff; width: 100%; padding: 14px; font-size: 16px; }
+      .ghost { background: #eef; color: #333; }
+      .danger-note {
+        font-size: 12px;
+        color: #a55;
+        background: #fff7f0;
+        border-left: 3px solid #f7c280;
+        padding: 8px 10px;
+        border-radius: 6px;
+        margin-top: 8px;
+      }
+      #status {
+        margin-top: 8px;
+        padding: 10px 12px;
+        background: #f0f0f3;
+        border-radius: 6px;
+        font-family: ui-monospace, Menlo, monospace;
+        font-size: 13px;
+        white-space: pre-wrap;
+        min-height: 1.4em;
+        color: #333;
+      }
+      .row-btns { display: flex; gap: 8px; margin-top: 10px; }
+      .row-btns button { flex: 1; }
+      details { font-size: 13px; color: #555; margin-top: 14px; }
+      details code { background: #eee; padding: 1px 5px; border-radius: 3px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>ESP32 打印验证</h1>
+      <p class="sub">
+        手机开热点 → ESP32 连上 → 用本页面把文本发给 ESP32 → 看串口和打印机出纸。
+        本页面用顶层跳转触发 GET，能从 <code>https://</code> 站点直接调 ESP32 的 HTTP 接口。
+        发送前自动 <b>UTF-8 → GBK</b> 转码（codepage 936），ESP32 端 FS &amp; 进入中文模式后透传给打印机。
+      </p>
+
+      <section class="card">
+        <label for="ip">ESP32 IP（在串口监视器里能看到）</label>
+        <div class="row">
+          <input id="ip" type="text" placeholder="例：172.20.10.5" inputmode="numeric" />
+          <button id="pingBtn" type="button" class="ghost">Ping</button>
+        </div>
+        <div id="pingStatus" class="danger-note" style="display:none"></div>
+      </section>
+
+      <section class="card">
+        <label for="text">要发的小票文本</label>
+        <textarea id="text">Snap Roast Buddy
+==================
+今天的小票测试
+WiFi 直发验证 OK
+==================
+扣 1 留念</textarea>
+        <div class="row-btns">
+          <button id="fillExampleBtn" type="button" class="ghost">示例</button>
+          <button id="clearBtn" type="button" class="ghost">清空</button>
+        </div>
+      </section>
+
+      <button id="sendBtn" type="button" class="primary">发送到 ESP32（顶层跳转）</button>
+      <div id="status">等待操作。</div>
+
+      <details>
+        <summary>为什么用"顶层跳转"而不是 fetch？</summary>
+        <p>
+          浏览器禁止 HTTPS 页面用 <code>fetch()</code> 调 HTTP 资源（混合内容规则），
+          但允许 HTTPS 页面"导航"到 HTTP 地址（只会显示"不安全"提示）。
+          所以本页面构造 <code>http://&lt;ip&gt;/print?text=...</code> 然后 <code>window.location</code> 跳过去，
+          让 ESP32 解析 query 参数后打印，并返回一个"可打印"确认页。
+        </p>
+        <p>
+          本地开发（<code>http://localhost:5173/print-test.html</code>）下点 Ping 按钮，能用 fetch 验通；
+          线上 HTTPS 下 Ping 会被拦截属正常，请直接点"发送"。
+        </p>
+      </details>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const ipInput = $("ip");
+      const textInput = $("text");
+      const status = $("status");
+      const pingStatus = $("pingStatus");
+
+      const STORAGE_KEY = "snap_roast_esp32_ip";
+      ipInput.value = localStorage.getItem(STORAGE_KEY) || "";
+      ipInput.addEventListener("change", () => {
+        const v = ipInput.value.trim();
+        if (v) localStorage.setItem(STORAGE_KEY, v);
+      });
+
+      function setStatus(msg) {
+        status.textContent = msg;
+      }
+
+      function normalizeIp(raw) {
+        return raw.trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+      }
+
+      $("pingBtn").addEventListener("click", async () => {
+        const ip = normalizeIp(ipInput.value);
+        if (!ip) {
+          pingStatus.style.display = "block";
+          pingStatus.textContent = "请先填 IP。";
+          return;
+        }
+        pingStatus.style.display = "block";
+        pingStatus.textContent = "Ping " + ip + " …";
+        const t0 = performance.now();
+        try {
+          // 注意：HTTPS 页面下这一步会被 Mixed Content 拦截，属正常。
+          //      本地 HTTP dev 页面下能跑通。
+          const r = await fetch("http://" + ip + "/ping", { method: "GET" });
+          const text = await r.text();
+          pingStatus.textContent =
+            "✓ Ping 成功 " + Math.round(performance.now() - t0) + "ms，响应：" + text;
+        } catch (err) {
+          pingStatus.textContent =
+            "✗ Ping 失败：" + err.message +
+            "\n（在 HTTPS 页面上 fetch 被拦截属正常，直接点'发送'测端到端即可）";
+        }
+      });
+
+      $("clearBtn").addEventListener("click", () => {
+        textInput.value = "";
+        textInput.focus();
+      });
+
+      $("fillExampleBtn").addEventListener("click", () => {
+        textInput.value =
+          "Snap Roast Buddy\n" +
+          "==================\n" +
+          "今天的小票测试\n" +
+          "WiFi 直发验证 OK\n" +
+          "==================\n" +
+          "扣 1 留念";
+      });
+
+      // UTF-8 → GBK（codepage 936）→ %XX%XX 形式的 URL 编码字节串
+      // 用 cptable.utils.encode(936, text) 拿到 GBK 字节数组
+      // 再把每个字节手动 %hex 编码（不能用 encodeURIComponent，它会按 UTF-8 处理）
+      function encodeTextAsGbkPercent(text) {
+        if (typeof cptable === "undefined" || !cptable.utils) {
+          throw new Error("GBK 编码库 (cptable) 加载失败，检查 CDN 是否被拦截");
+        }
+        const bytes = cptable.utils.encode(936, text);
+        let result = "";
+        for (let i = 0; i < bytes.length; i++) {
+          const b = bytes[i] & 0xff;
+          result += "%" + b.toString(16).padStart(2, "0").toUpperCase();
+        }
+        return { encoded: result, byteLength: bytes.length };
+      }
+
+      $("sendBtn").addEventListener("click", () => {
+        const ip = normalizeIp(ipInput.value);
+        const text = textInput.value;
+        if (!ip) return setStatus("请先填 ESP32 IP。");
+        if (!text) return setStatus("内容不能为空。");
+        if (ip) localStorage.setItem(STORAGE_KEY, ip);
+
+        let encoded, byteLength;
+        try {
+          ({ encoded, byteLength } = encodeTextAsGbkPercent(text));
+        } catch (err) {
+          return setStatus("✗ " + err.message);
+        }
+
+        // GET URL 长度上限：Chrome ~2MB；iOS Safari ~80KB。
+        // GBK 后字节数 ≈ 中文字符数 * 2 + ASCII 字符数 * 1，普通小票远低于上限。
+        const url = "http://" + ip + "/print?text=" + encoded;
+        setStatus(
+          "已 GBK 编码：" + text.length + " 个字符 → " + byteLength + " 字节\n" +
+          "即将跳转到 ESP32：\n" + url.slice(0, 120) + (url.length > 120 ? "…" : "") +
+          "\n\n如果跳转后看到“✅ 可打印”页面 = 验证成功。\n按浏览器返回键回到本页面。"
+        );
+        setTimeout(() => {
+          window.location.href = url;
+        }, 250);
+      });
+    </script>
+  </body>
+</html>

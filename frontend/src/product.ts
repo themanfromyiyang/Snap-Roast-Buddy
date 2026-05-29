@@ -140,6 +140,7 @@ const fixedPrinterSlot = mustQuery<HTMLDivElement>("#fixedPrinterSlot");
 const ticketLongPreview = mustQuery<HTMLDivElement>("#ticketLongPreview");
 const ticketCarousel = mustQuery<HTMLDivElement>("#ticketCarousel");
 const regenerateButton = mustQuery<HTMLButtonElement>("#regenerateButton");
+const printButton = mustQuery<HTMLButtonElement>("#printButton");
 const deleteRecordButton = mustQuery<HTMLButtonElement>("#deleteRecordButton");
 const backToCameraButton = mustQuery<HTMLButtonElement>("#backToCameraButton");
 const confirmRegenerateButton = mustQuery<HTMLButtonElement>("#confirmRegenerateButton");
@@ -255,6 +256,7 @@ backToCameraButton.addEventListener("click", showCamera);
 regenerateButton.addEventListener("click", openRegenerateSheet);
 confirmRegenerateButton.addEventListener("click", () => confirmRegenerate());
 deleteRecordButton.addEventListener("click", openDeleteConfirmDialog);
+attachPrintButtonHandlers();
 cancelDeleteButton.addEventListener("click", closeDeleteConfirmDialog);
 confirmDeleteButton.addEventListener("click", () => {
   closeDeleteConfirmDialog();
@@ -818,6 +820,135 @@ async function generateSketch(imageUrl: string): Promise<string> {
   return result;
 }
 
+// === ESP32 WiFi 打印 ============================================
+// 走"HTTPS 顶层跳转到 http://<ip>/print?text=..."的路子，
+// 因为浏览器禁止 HTTPS 页面 fetch 一个 HTTP 资源（混合内容），
+// 但允许顶层导航。新标签页打开，用户打印完关闭即可。
+//
+// 文本走 UTF-8 → GBK（codepage 936）转码，再用手工 %XX 形式 URL 编码，
+// 因为 encodeURIComponent 只会按 UTF-8 处理，给打印机喂 UTF-8 会乱码。
+declare const cptable: { utils: { encode: (cp: number, text: string) => number[] } } | undefined;
+
+const ESP32_IP_STORAGE_KEY = "snap_roast_esp32_ip";
+const PRINT_LONG_PRESS_MS = 900;
+
+function hasPrintableText(record: PhotoRecord): boolean {
+  return Boolean((record.ticketText ?? "").trim());
+}
+
+function getStoredEsp32Ip(): string {
+  try {
+    return (localStorage.getItem(ESP32_IP_STORAGE_KEY) ?? "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function setStoredEsp32Ip(ip: string): void {
+  try {
+    if (ip) localStorage.setItem(ESP32_IP_STORAGE_KEY, ip);
+    else localStorage.removeItem(ESP32_IP_STORAGE_KEY);
+  } catch {
+    // localStorage 不可用，跳过
+  }
+}
+
+function normalizeIp(raw: string): string {
+  return raw.trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+}
+
+function askForEsp32Ip(current: string): string {
+  const hint =
+    "请输入 ESP32 的 IP（在 Arduino 串口监视器里能看到，一般是 172.20.10.X）。\n" +
+    "留空可清除已保存的 IP。";
+  const next = window.prompt(hint, current);
+  if (next === null) return current;        // 用户取消，保持原值
+  const normalized = normalizeIp(next);
+  setStoredEsp32Ip(normalized);
+  return normalized;
+}
+
+function encodeTextAsGbkPercent(text: string): string {
+  if (typeof cptable === "undefined" || !cptable?.utils) {
+    throw new Error("GBK 编码库 (cptable) 未加载，检查 index.html 的 CDN 脚本");
+  }
+  const bytes = cptable.utils.encode(936, text);
+  let result = "";
+  for (let i = 0; i < bytes.length; i++) {
+    const b = bytes[i] & 0xff;
+    result += "%" + b.toString(16).padStart(2, "0").toUpperCase();
+  }
+  return result;
+}
+
+function getPrintableTextFromCurrentRecord(): string {
+  const record = records[currentRecordIndex];
+  if (!record) return "";
+  return (record.ticketText ?? "").trim();
+}
+
+function triggerPrint(): void {
+  const text = getPrintableTextFromCurrentRecord();
+  if (!text) {
+    window.alert("当前小票没有可打印文本（可能是漫画贴纸模式）。");
+    return;
+  }
+
+  let ip = getStoredEsp32Ip();
+  if (!ip) ip = askForEsp32Ip("");
+  if (!ip) return;   // 用户没填，取消
+
+  let encoded: string;
+  try {
+    encoded = encodeTextAsGbkPercent(text);
+  } catch (err) {
+    window.alert((err instanceof Error ? err.message : String(err)) + "。\n刷新页面重试。");
+    return;
+  }
+
+  const url = `http://${ip}/print?text=${encoded}`;
+  softHaptic();
+  // 新标签页打开，避免离开当前相册页；浏览器会提示"不安全"是 HTTPS→HTTP 的正常行为
+  const opened = window.open(url, "_blank");
+  if (!opened) {
+    // 浏览器拦了 popup（少见，因为这是用户手势触发），降级到当前页跳转
+    window.location.href = url;
+  }
+}
+
+function attachPrintButtonHandlers(): void {
+  let longPressTimer = 0;
+  let longPressFired = false;
+
+  const startLongPress = () => {
+    longPressFired = false;
+    window.clearTimeout(longPressTimer);
+    longPressTimer = window.setTimeout(() => {
+      longPressFired = true;
+      askForEsp32Ip(getStoredEsp32Ip());
+    }, PRINT_LONG_PRESS_MS);
+  };
+  const cancelLongPress = () => {
+    window.clearTimeout(longPressTimer);
+  };
+
+  printButton.addEventListener("pointerdown", startLongPress);
+  printButton.addEventListener("pointerup", cancelLongPress);
+  printButton.addEventListener("pointerleave", cancelLongPress);
+  printButton.addEventListener("pointercancel", cancelLongPress);
+
+  printButton.addEventListener("click", (event) => {
+    if (longPressFired) {
+      // 长按已经触发过 IP 重设，吃掉这次 click
+      event.preventDefault();
+      longPressFired = false;
+      return;
+    }
+    triggerPrint();
+  });
+}
+// === /ESP32 WiFi 打印 ============================================
+
 function renderCurrentRecord() {
   const record = records[currentRecordIndex];
   const hydratedRecord = isHydratedRecord(record) ? record : undefined;
@@ -827,15 +958,18 @@ function renderCurrentRecord() {
     recordCounter.textContent = "0 / 0";
     regenerateButton.disabled = true;
     deleteRecordButton.disabled = true;
+    printButton.disabled = true;
     fixedPrinterSlot.hidden = true;
     renderAlbumSlides();
     resultScroller.scrollTop = 0;
     return;
   }
 
-  if (hydratedRecord) resultOriginalImage.src = hydratedRecord.originalImageUrl;
-  regenerateButton.disabled = !hydratedRecord;
-  deleteRecordButton.disabled = !record;
+if (hydratedRecord) resultOriginalImage.src = hydratedRecord.originalImageUrl;
+
+regenerateButton.disabled = !hydratedRecord;
+deleteRecordButton.disabled = !record;
+printButton.disabled = !hasPrintableText(hydratedRecord || record);
   fixedPrinterSlot.hidden = false;
   updateResultMeta(hydratedRecord ?? record);
   renderAlbumSlides();
