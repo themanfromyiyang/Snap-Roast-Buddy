@@ -99,11 +99,15 @@ export async function printRasterFromElement(element: HTMLElement) {
   await sendBytes(concatBytes(init, raster, feed));
 }
 
-// 一次性发整张超大 GS v 0 命令时，9600bps 串口送字节比热敏打印机消化栅格快，
-// 打印机内部 buffer 没有硬件流控，溢出就丢字节，结果中段缺行/淡化。
-// 解法：切成条带，每条 STRIP_ROWS 行 = 一条独立 GS v 0 命令。
-// 打印机收完一条就立刻吐出来，buffer 清空，再收下一条，全程不憋。
-const STRIP_ROWS = 24;
+// 单条 GS v 0 命令包整张位图。
+// 规格书 P25 明确写："此指令带有打印功能，边传数据边打印，不需要再使用打印指令"——
+// GS v 0 是 streaming 模式，yL/yH 可以远大于内部缓冲，打印机边收边打。
+// 配合 ESP32 端 DTR 硬件流控（打印机 buffer 快满时拉 BUSY，ESP32 停发），
+// 整张图能一气呵成，电机匀速、无命令边界处的停顿与密度抖动。
+//
+// 历史：之前没接 DTR 时切过 24 行条带防溢出，但条带间每个 GS v 0 命令
+// 结束都会让电机短暂停顿（启停处密度抖动 + 断断续续），所以一旦接了
+// DTR 就该改回单条。
 
 export function canvasToEscPosRaster(canvas: HTMLCanvasElement, threshold = 180) {
   const scale = PRINT_WIDTH_DOTS / canvas.width;
@@ -140,22 +144,13 @@ export function canvasToEscPosRaster(canvas: HTMLCanvasElement, threshold = 180)
     }
   }
 
-  // 把整张位图切成 STRIP_ROWS 行一条，每条独立 GS v 0 命令
-  const strips: Uint8Array[] = [];
-  for (let stripStart = 0; stripStart < targetHeight; stripStart += STRIP_ROWS) {
-    const stripHeight = Math.min(STRIP_ROWS, targetHeight - stripStart);
-    const header = new Uint8Array([
-      0x1d, 0x76, 0x30, 0x00,
-      xBytes & 0xff, (xBytes >> 8) & 0xff,
-      stripHeight & 0xff, (stripHeight >> 8) & 0xff
-    ]);
-    const stripBytes = bitmap.subarray(
-      stripStart * xBytes,
-      (stripStart + stripHeight) * xBytes
-    );
-    strips.push(header, stripBytes);
-  }
-  return concatBytes(...strips);
+  // 单条 GS v 0：m=0 正常模式，xBytes 个字节宽，targetHeight 行高
+  const header = new Uint8Array([
+    0x1d, 0x76, 0x30, 0x00,
+    xBytes & 0xff, (xBytes >> 8) & 0xff,
+    targetHeight & 0xff, (targetHeight >> 8) & 0xff
+  ]);
+  return concatBytes(header, bitmap);
 }
 
 export function concatBytes(...arrays: Uint8Array[]) {
