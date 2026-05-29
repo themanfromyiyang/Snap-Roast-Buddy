@@ -38,20 +38,38 @@ const int PRINTER_DTR_PIN = 41;
 const int PRINTER_DTR_BUSY_LEVEL = HIGH;
 const unsigned long PRINTER_DTR_TIMEOUT_MS = 30000;
 
-// 等 DTR 变 READY；超时返回防死锁（接错线/极性反时打印失败而非整机卡死）
+// 等 DTR 变 READY 并稳定一段时间（去抖）。
+// 之前一看到 READY 就发，但 DTR 在临界点会快速 BUSY/READY 抖动，导致 ESP32
+// 不停 send/stop/send/stop，打印电机跟着 start/stop/start/stop，每个切换处
+// 密度抖动严重。要求 DTR 连续 READY 一段时间才认为打印机真稳定了，
+// 让单段发送更连贯、电机匀速。
+static const int DTR_SUSTAINED_READY_US = 1000;  // 连续 READY 1ms 才认为稳了
+static const int DTR_POLL_INTERVAL_US = 50;
+
 static inline void waitPrinterReady() {
   unsigned long start = millis();
-  while (digitalRead(PRINTER_DTR_PIN) == PRINTER_DTR_BUSY_LEVEL) {
-    if (millis() - start > PRINTER_DTR_TIMEOUT_MS) {
-      Serial.println("[dtr] WARN: 30s 等不到 READY，可能 DTR 极性反或没接好");
-      return;
+  int readyAcc = 0;   // 已连续 READY 的微秒数
+  while (readyAcc < DTR_SUSTAINED_READY_US) {
+    if (digitalRead(PRINTER_DTR_PIN) == PRINTER_DTR_BUSY_LEVEL) {
+      readyAcc = 0;   // BUSY 一次就清零，必须重新连续 READY
+      if (millis() - start > PRINTER_DTR_TIMEOUT_MS) {
+        Serial.println("[dtr] WARN: 30s 等不到 READY，可能极性反或没接好");
+        return;
+      }
+    } else {
+      readyAcc += DTR_POLL_INTERVAL_US;
     }
-    delayMicroseconds(50);
+    delayMicroseconds(DTR_POLL_INTERVAL_US);
   }
 }
 
-// 包裹 Printer.write：每发一个字节前先确认打印机能收
+// 包裹 Printer.write：每发一字节前
+//   1. 限制 ESP32 内部 TX FIFO 水位（让 DTR 信号实时反映真实串口状态，不滞后）
+//   2. 等打印机 DTR 稳定 READY 再发
 static inline void printerWriteFlow(uint8_t b) {
+  while (Printer.availableForWrite() < 64) {
+    yield();   // TX FIFO 还堆着一大批没发出去，先消化再说
+  }
   waitPrinterReady();
   Printer.write(b);
 }
@@ -307,16 +325,17 @@ static void handleRasterChunk() {
     printerWriteFlow(0x40);
     delay(50);
 
-    // ESC 7 n1 n2 n3：调高打印浓度（参考 MY-628 规格书 P53）
+    // ESC 7 n1 n2 n3：把加热时间拉到接近最大，让每个像素无论电机是否
+    // 临时停一下都能烧透——这样密度均匀、和屏幕上 p5 小票纯黑一致
+    // 参考 MY-628 规格书 P53。
     //   n1=09  最多加热点 80 点（默认）
-    //   n2=A0  加热时间 1600µs（默认 80=800µs 偏淡，规格书示例就是 A0=1600µs）
-    //   n3=02  加热间隔 20µs（默认）
-    // 这条会让黑色实在很多，反白底色填实，开头几行不再发淡。
+    //   n2=FF  加热时间 2550µs（最大值，文档示例最高用 1600µs，这里再压满）
+    //   n3=08  加热间隔 80µs（默认 20µs；拉大点缓解峰值电流，让供电更稳）
     printerWriteFlow(0x1B);
     printerWriteFlow(0x37);
     printerWriteFlow(0x09);
-    printerWriteFlow(0xA0);
-    printerWriteFlow(0x02);
+    printerWriteFlow(0xFF);
+    printerWriteFlow(0x08);
     delay(10);
 
     size_t printedBytes = streamBase64ToPrinter(g_rasterAccum);
