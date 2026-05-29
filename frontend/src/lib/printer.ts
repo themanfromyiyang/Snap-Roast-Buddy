@@ -249,3 +249,17 @@ function clampByte(value: number) {
 function delay(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
+
+export function bytesToBase64(bytes: Uint8Array): string {
+  const CHUNK = 8192;
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    const slice = bytes.subarray(i, Math.min(i + CHUNK, bytes.length));
+    let chunkStr = "";
+    for (let j = 0; j < slice.length; j += 1) {
+      chunkStr += String.fromCharCode(slice[j]);
+    }
+    binary += chunkStr;
+  }
+  return btoa(binary);
+}
