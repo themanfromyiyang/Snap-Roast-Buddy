@@ -191,15 +191,23 @@ static void handlePrintBridge() {
   html += "const raw=location.hash.slice(1);";
   html += "if(!raw){s.textContent='错误：URL 没有 hash 数据';s.classList.add('err');return;}";
   html += "const b64=decodeURIComponent(raw);";
-  html += "s.textContent='发往 ESP32 ('+b64.length+' 字符 base64)…';";
+  html += "const CHUNK=8192;";   // 8KB 块。ESP32 Arduino WebServer 对单次 text/plain
+                                  // body 有上限（实测 ~70KB 直接被丢，剩 valueLen=0），
+                                  // 分小块每块就在阈值以下。8192 是 4 的倍数，base64
+                                  // 切块不会跨越解码边界。
+  html += "const total=Math.ceil(b64.length/CHUNK);";
+  html += "s.textContent='准备分 '+total+' 块上传 ('+b64.length+' 字符)…';";
   html += "try{";
-  // body 用 Uint8Array 而不是 string：强制浏览器设 Content-Length，不走 chunked
-  // transfer encoding（ESP32 Arduino WebServer 不解析 chunked，会读到 0 字节）。
-  // base64 是纯 ASCII，TextEncoder UTF-8 后字节数 == 字符数。
-  html += "const bytes=new TextEncoder().encode(b64);";
-  html += "const r=await fetch('/print-raster',{method:'POST',headers:{'Content-Type':'text/plain'},body:bytes});";
-  html += "const t=await r.text();";
-  html += "document.open();document.write(t);document.close();";
+  html += "for(let seq=0;seq<total;seq++){";
+  html += "const chunk=b64.slice(seq*CHUNK,(seq+1)*CHUNK);";
+  html += "const isFinal=seq===total-1?1:0;";
+  html += "const url='/print-raster-chunk?seq='+seq+'&final='+isFinal;";
+  html += "const bytes=new TextEncoder().encode(chunk);";
+  html += "s.textContent='上传 '+(seq+1)+'/'+total+' ('+chunk.length+' 字符)…';";
+  html += "const r=await fetch(url,{method:'POST',headers:{'Content-Type':'text/plain'},body:bytes});";
+  html += "if(!r.ok)throw new Error('块 '+seq+' 失败 HTTP '+r.status);";
+  html += "if(isFinal){const t=await r.text();document.open();document.write(t);document.close();return;}";
+  html += "}";
   html += "}catch(e){s.textContent='出错: '+e.message;s.classList.add('err');}";
   html += "})();";
   html += "</script>";
@@ -208,11 +216,90 @@ static void handlePrintBridge() {
   server.send(200, "text/html; charset=utf-8", html);
 }
 
-// ---- POST /print-raster ----
+// ---- 分块流式打印的会话状态 ----
+// ESP32 Arduino WebServer 单次 text/plain body 超 ~10KB 阈值后，arg("plain") 会
+// 拿到空串（reserve 失败 / 内部限制），所以前端要把 base64 拆成 8KB 块顺序发。
+// ESP32 不累积大数据：每块来了立刻 base64 流式解码并 Printer.write，靠 9600bps
+// 串口自然限速。session 用最简：seq=0 时开始打印（ESC@ 初始化），final=1 时走纸。
+static int g_rasterLastSeq = -1;   // 上一块的 seq，初始 -1。校验顺序用。
+static size_t g_rasterTotalBytes = 0;
+
+// ---- POST /print-raster-chunk?seq=N&final=0|1 ----
+// body：8KB 的 base64 文本块（text/plain，落 arg("plain")）
+static void handleRasterChunk() {
+  sendCors();
+
+  int seq = server.arg("seq").toInt();
+  bool isFinal = server.arg("final") == "1";
+  const String& chunk = server.arg("plain");
+
+  Serial.print("[chunk] seq=");
+  Serial.print(seq);
+  Serial.print(" len=");
+  Serial.print(chunk.length());
+  Serial.print(" final=");
+  Serial.println(isFinal ? 1 : 0);
+
+  if (seq == 0) {
+    // 新打印任务：初始化打印机，重置 session
+    Serial.println("[chunk] 开始新打印任务");
+    Printer.write(0x1B);
+    Printer.write(0x40);
+    delay(50);
+    g_rasterLastSeq = -1;
+    g_rasterTotalBytes = 0;
+  }
+
+  if (seq != g_rasterLastSeq + 1) {
+    Serial.print("[chunk] seq 不连续，期望 ");
+    Serial.print(g_rasterLastSeq + 1);
+    Serial.print(" 收到 ");
+    Serial.println(seq);
+    server.send(400, "text/plain", "seq out of order");
+    return;
+  }
+
+  size_t printedThisChunk = streamBase64ToPrinter(chunk);
+  g_rasterTotalBytes += printedThisChunk;
+  g_rasterLastSeq = seq;
+
+  if (isFinal) {
+    // 走纸结束
+    Printer.write('\n');
+    Printer.write('\n');
+    Printer.write('\n');
+    Serial.print("[chunk] 完成，总解码字节: ");
+    Serial.println(g_rasterTotalBytes);
+
+    String html;
+    html.reserve(512);
+    html += "<!doctype html><html lang=\"zh-CN\"><head>";
+    html += "<meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">";
+    html += "<title>已打印</title><style>";
+    html += "body{font-family:-apple-system,'PingFang SC',sans-serif;padding:24px;max-width:520px;margin:0 auto;background:#f7f7f7}";
+    html += ".ok{font-size:28px;color:#0a0}h1{margin:8px 0}";
+    html += ".panel{background:#fff;padding:16px;border-radius:8px;margin-top:16px}";
+    html += ".meta{color:#666;font-size:13px}a{display:inline-block;margin-top:18px;color:#06f}";
+    html += "</style></head><body>";
+    html += "<div class=\"ok\">✅ 已打印</div>";
+    html += "<h1>位图已发到打印机</h1>";
+    html += "<div class=\"panel\"><div class=\"meta\">总解码字节数：" + String(g_rasterTotalBytes) + "</div></div>";
+    html += "<a href=\"javascript:history.back()\">← 返回</a>";
+    html += "</body></html>";
+    server.send(200, "text/html; charset=utf-8", html);
+
+    g_rasterLastSeq = -1;
+    g_rasterTotalBytes = 0;
+  } else {
+    server.send(200, "application/json", "{\"ok\":true,\"seq\":" + String(seq) + ",\"printedBytes\":" + String(printedThisChunk) + "}");
+  }
+}
+
+// ---- POST /print-raster（一次性整传，留给 curl 测试小数据用）----
 // body 接受两种格式：
 //   1) Content-Type: text/plain，body 就是 raw base64 → 从 arg("plain") 拿
 //   2) Content-Type: application/x-www-form-urlencoded，body 为 data=<base64> → 从 arg("data") 拿
-// 桥接页用 (1)，curl 测试用 (2)。
+// 桥接页**不再用这个端点**，改走 /print-raster-chunk 分块。
 static void handlePrintRaster() {
   sendCors();
 
@@ -318,6 +405,8 @@ void setup() {
   server.on("/print", HTTP_OPTIONS, handleOptions);
   server.on("/print-raster", HTTP_POST,    handlePrintRaster);
   server.on("/print-raster", HTTP_OPTIONS, handleOptions);
+  server.on("/print-raster-chunk", HTTP_POST,    handleRasterChunk);
+  server.on("/print-raster-chunk", HTTP_OPTIONS, handleOptions);
   server.on("/print-bridge", HTTP_GET,     handlePrintBridge);
 
   // 让 server.header("Content-Length") / ("Transfer-Encoding") 在 handler 里可读
