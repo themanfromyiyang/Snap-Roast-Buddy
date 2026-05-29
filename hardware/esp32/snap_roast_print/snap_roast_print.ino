@@ -243,6 +243,8 @@ void setup() {
   server.on("/print", HTTP_GET,     handlePrintGet);
   server.on("/print", HTTP_POST,    handlePrintPost);
   server.on("/print", HTTP_OPTIONS, handleOptions);
+  server.on("/print-raster", HTTP_POST,    handlePrintRaster);
+  server.on("/print-raster", HTTP_OPTIONS, handleOptions);
   server.onNotFound([]() {
     sendCors();
     server.send(404, "text/plain", "Not found");
