@@ -873,7 +873,7 @@ function getCurrentTicketElement(): HTMLElement | null {
 
 async function buildRasterBase64(element: HTMLElement): Promise<string> {
   const canvas = await elementToCanvas(element);
-  const raster = canvasToEscPosRaster(canvas, 180);
+  const raster = canvasToEscPosRaster(canvas);
   return bytesToBase64(raster);
 }
 

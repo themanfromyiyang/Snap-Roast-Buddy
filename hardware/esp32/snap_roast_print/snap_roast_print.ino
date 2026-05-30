@@ -21,10 +21,9 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <HardwareSerial.h>
-#include "secrets.h"   // 定义 WIFI_SSID / WIFI_PASSWORD，已 .gitignore，不会进仓库
 
-const char* ssid     = WIFI_SSID;
-const char* password = WIFI_PASSWORD;
+const char* ssid     = "iPhone on the beach";
+const char* password = "Qwer123321";
 
 HardwareSerial Printer(1);
 WebServer server(80);
@@ -274,7 +273,7 @@ static void handlePrintRaster() {
 
 void setup() {
   Serial.begin(115200);
-  Printer.begin(9600, SERIAL_8N1, 1, 2);  // RX=1, TX=2
+  Printer.begin(57600, SERIAL_8N1, 1, 2);  // RX=1, TX=2
   delay(500);
 
   WiFi.mode(WIFI_STA);

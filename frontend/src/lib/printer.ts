@@ -94,12 +94,12 @@ export async function printTestText() {
 export async function printRasterFromElement(element: HTMLElement) {
   const canvas = await elementToCanvas(element);
   const init = new Uint8Array([0x1b, 0x40]);
-  const raster = canvasToEscPosRaster(canvas, 180);
+  const raster = canvasToEscPosRaster(canvas);
   const feed = new Uint8Array([0x1b, 0x64, 4]);
   await sendBytes(concatBytes(init, raster, feed));
 }
 
-export function canvasToEscPosRaster(canvas: HTMLCanvasElement, threshold = 180) {
+export function canvasToEscPosRaster(canvas: HTMLCanvasElement, threshold = 128) {
   const scale = PRINT_WIDTH_DOTS / canvas.width;
   const targetHeight = Math.max(1, Math.round(canvas.height * scale));
   const offscreen = document.createElement("canvas");
@@ -114,27 +114,41 @@ export function canvasToEscPosRaster(canvas: HTMLCanvasElement, threshold = 180)
 
   const imageData = context.getImageData(0, 0, PRINT_WIDTH_DOTS, targetHeight);
   const pixels = imageData.data;
-  const xBytes = PRINT_WIDTH_DOTS / 8;
-  const bitmap = new Uint8Array(xBytes * targetHeight);
+  const width = PRINT_WIDTH_DOTS;
+  const height = targetHeight;
+  const xBytes = width / 8;
 
-  for (let y = 0; y < targetHeight; y += 1) {
-    for (let xByte = 0; xByte < xBytes; xByte += 1) {
-      let byte = 0;
-      for (let bit = 0; bit < 8; bit += 1) {
-        const x = xByte * 8 + bit;
-        const pixelIndex = (y * PRINT_WIDTH_DOTS + x) * 4;
-        const r = pixels[pixelIndex] ?? 255;
-        const g = pixels[pixelIndex + 1] ?? 255;
-        const b = pixels[pixelIndex + 2] ?? 255;
-        const a = pixels[pixelIndex + 3] ?? 255;
-        const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-        if (a > 0 && gray < threshold) byte |= 0x80 >> bit;
+  const gray = new Float32Array(width * height);
+  for (let i = 0, p = 0; i < gray.length; i += 1, p += 4) {
+    const r = pixels[p] ?? 255;
+    const g = pixels[p + 1] ?? 255;
+    const b = pixels[p + 2] ?? 255;
+    const a = pixels[p + 3] ?? 255;
+    const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+    gray[i] = a > 0 ? luma + (255 - a) : 255;
+  }
+
+  const bitmap = new Uint8Array(xBytes * height);
+  for (let y = 0; y < height; y += 1) {
+    const rowStart = y * width;
+    for (let x = 0; x < width; x += 1) {
+      const idx = rowStart + x;
+      const oldPx = gray[idx];
+      const newPx = oldPx < threshold ? 0 : 255;
+      if (newPx === 0) {
+        bitmap[y * xBytes + (x >> 3)] |= 0x80 >> (x & 7);
       }
-      bitmap[y * xBytes + xByte] = byte;
+      const err = oldPx - newPx;
+      if (x + 1 < width)            gray[idx + 1]         += err * 7 / 16;
+      if (y + 1 < height) {
+        if (x > 0)                  gray[idx + width - 1] += err * 3 / 16;
+                                    gray[idx + width]     += err * 5 / 16;
+        if (x + 1 < width)          gray[idx + width + 1] += err * 1 / 16;
+      }
     }
   }
 
-  const header = new Uint8Array([0x1d, 0x76, 0x30, 0x00, xBytes & 0xff, (xBytes >> 8) & 0xff, targetHeight & 0xff, (targetHeight >> 8) & 0xff]);
+  const header = new Uint8Array([0x1d, 0x76, 0x30, 0x00, xBytes & 0xff, (xBytes >> 8) & 0xff, height & 0xff, (height >> 8) & 0xff]);
   return concatBytes(header, bitmap);
 }
 
