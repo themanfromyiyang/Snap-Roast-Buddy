@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git commit *)",
+      "Bash(npm run *)",
+      "Bash(where tsc *)",
+      "Bash(where npx *)",
+      "Bash(tsc --noEmit)",
+      "Bash(npx tsc *)",
+      "Bash(cat)",
+      "Bash(node /tmp/test_chunk_size.js)",
+      "Bash(cat \"d:\\\\桌面\\\\Snap-Roast-Buddy\\\\frontend\\\\tsconfig.json\")",
+      "Bash(cat \"d:\\\\桌面\\\\Snap-Roast-Buddy\\\\tsconfig.json\")",
+      "Bash(npm.cmd run *)"
+    ]
+  }
+}

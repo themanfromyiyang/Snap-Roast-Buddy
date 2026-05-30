@@ -21,10 +21,9 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <HardwareSerial.h>
-#include "secrets.h"   // 定义 WIFI_SSID / WIFI_PASSWORD，已 .gitignore，不会进仓库
 
-const char* ssid     = WIFI_SSID;
-const char* password = WIFI_PASSWORD;
+const char* ssid     = "iPhone on the beach";
+const char* password = "Qwer123321";
 
 HardwareSerial Printer(1);
 WebServer server(80);
@@ -38,26 +37,24 @@ const int PRINTER_DTR_PIN = 41;
 const int PRINTER_DTR_BUSY_LEVEL = HIGH;
 const unsigned long PRINTER_DTR_TIMEOUT_MS = 30000;
 
-// 等 DTR 变 READY 并稳定一段时间（去抖）。
-// 之前一看到 READY 就发，但 DTR 在临界点会快速 BUSY/READY 抖动，导致 ESP32
-// 不停 send/stop/send/stop，打印电机跟着 start/stop/start/stop，每个切换处
-// 密度抖动严重。要求 DTR 连续 READY 一段时间才认为打印机真稳定了，
-// 让单段发送更连贯、电机匀速。
-static const int DTR_SUSTAINED_READY_US = 1000;  // 连续 READY 1ms 才认为稳了
+// 等 DTR 变 READY 就发——瞬时检查，不再做"连续 READY 1ms"的滞后去抖。
+// 历史：9600bps 时 UART 比打印机消费慢，DTR 几乎不会拉 BUSY，只在临界点
+// 快速抖动，所以加了 1ms 滞后避免抖动期间发字节。
+// 现在 57600 下 UART (5760B/s) 仍快于打印机消费 (~3650B/s)，DTR 会正常进入
+// BUSY→READY 循环。每次 READY 是因为打印机真吃掉了一批字节、buffer 空了，
+// 不是抖动，所以直接看到 READY 就发即可。1ms 滞后反而把上限压到 1000B/s，
+// 比 9600bps 还慢。
+// 选 57600 不选 115200：115200 在杜邦线 + 弱地的环境下零星位翻转会破坏 GS v 0
+// 命令头里的图像长度字段，导致打印机进入"无尽吃数据"状态，断电重启都救不回来
+// （MY-628 上电恢复打印机制）。57600 信号余量充足，可靠性远高于 115200。
 static const int DTR_POLL_INTERVAL_US = 50;
 
 static inline void waitPrinterReady() {
   unsigned long start = millis();
-  int readyAcc = 0;   // 已连续 READY 的微秒数
-  while (readyAcc < DTR_SUSTAINED_READY_US) {
-    if (digitalRead(PRINTER_DTR_PIN) == PRINTER_DTR_BUSY_LEVEL) {
-      readyAcc = 0;   // BUSY 一次就清零，必须重新连续 READY
-      if (millis() - start > PRINTER_DTR_TIMEOUT_MS) {
-        Serial.println("[dtr] WARN: 30s 等不到 READY，可能极性反或没接好");
-        return;
-      }
-    } else {
-      readyAcc += DTR_POLL_INTERVAL_US;
+  while (digitalRead(PRINTER_DTR_PIN) == PRINTER_DTR_BUSY_LEVEL) {
+    if (millis() - start > PRINTER_DTR_TIMEOUT_MS) {
+      Serial.println("[dtr] WARN: 30s 等不到 READY，可能极性反或没接好");
+      return;
     }
     delayMicroseconds(DTR_POLL_INTERVAL_US);
   }
@@ -65,10 +62,16 @@ static inline void waitPrinterReady() {
 
 // 包裹 Printer.write：每发一字节前
 //   1. 限制 ESP32 内部 TX FIFO 水位（让 DTR 信号实时反映真实串口状态，不滞后）
-//   2. 等打印机 DTR 稳定 READY 再发
+//   2. 等打印机 DTR READY 再发
+//
+// 阈值 64：ESP32 Arduino UART 默认 TX 软件缓冲约 256 字节。阈值设到接近
+// 上限（如 250）会导致 availableForWrite() 在高速场景下永远到不了 → 死循环。
+// 64 是经过验证可用的水位，最多允许 ~192B 在飞行（约 33ms @57600），
+// DTR BUSY 拉起后这些飞行字节仍会进打印机 buffer，所以打印机端的 BUSY
+// 阈值必须保留至少 200 字节余量——MY-628 64KB RAM 通常足够。
 static inline void printerWriteFlow(uint8_t b) {
   while (Printer.availableForWrite() < 64) {
-    yield();   // TX FIFO 还堆着一大批没发出去，先消化再说
+    yield();
   }
   waitPrinterReady();
   Printer.write(b);
@@ -266,12 +269,13 @@ static void handlePrintBridge() {
 
 // ---- 分块累积式打印的会话状态 ----
 // 之前每块来了立刻解码+Printer.write，但块之间有 HTTP roundtrip 的几十毫秒
-// 空隙。9600bps 串口本身就慢，热敏打印机对 GS v 0 这种多字节栅格命令有
-// "等数据超时"——中途停太久就以为命令结束，后续字节被当文本解释，
-// 导致打印错位、行重叠、看着糊。
+// 空隙。热敏打印机对 GS v 0 这种多字节栅格命令有"等数据超时"——中途停太久
+// 就以为命令结束，后续字节被当文本解释，导致打印错位、行重叠、看着糊。
+// 即使升到 115200，HTTP roundtrip 仍可能超过打印机的命令间隔阈值，
+// 所以累积策略不变。
 //
 // 正解：每块只追加到累加器（不发打印机），final=1 那块到齐后，一次性把全部
-// base64 解码 + 连续 Printer.write。9600bps 串口一气吐完，没有断流。
+// base64 解码 + 连续 Printer.write，一气吐完没有断流。
 // base64 ~74KB，ESP32-S3 N16R8 内存够。
 static String g_rasterAccum;
 static int g_rasterLastSeq = -1;
@@ -297,7 +301,10 @@ static void handleRasterChunk() {
     g_rasterAccum = "";
     g_rasterAccum.reserve(120000);   // 上限给够，避免边追加边 realloc
     g_rasterLastSeq = -1;
-    Serial.println("[chunk] 开始新任务，清空累加器");
+    Serial.print("[chunk] 开始新任务，清空累加器，free heap=");
+    Serial.print(ESP.getFreeHeap());
+    Serial.print(" largest block=");
+    Serial.println(ESP.getMaxAllocHeap());
   }
 
   if (seq != g_rasterLastSeq + 1) {
@@ -319,24 +326,58 @@ static void handleRasterChunk() {
     Serial.print("[chunk] 全部块到齐，base64 总长度 ");
     Serial.println(g_rasterAccum.length());
 
+    // ---- 诊断：验证 print #1 vs print #2 的字节是否真的逐位一致 ----
+    // 长度相同不代表内容相同。算个简单滚动哈希 + 首尾 32 字符 + 解码出来
+    // 前 16 字节 hex（应是 1D 76 30 00 xL xH yL yH + 8 字节位图）。
+    // 两次打印这三个全一样 = ESP32 内存里的字节 100% 一致。
+    uint32_t accumHash = 5381;
+    for (size_t i = 0; i < g_rasterAccum.length(); i++) {
+      accumHash = ((accumHash << 5) + accumHash) + (uint8_t)g_rasterAccum[i];
+    }
+    Serial.print("[diag] accum hash: 0x");
+    Serial.println(accumHash, HEX);
+    Serial.print("[diag] accum first 32 chars: ");
+    Serial.println(g_rasterAccum.substring(0, 32));
+    Serial.print("[diag] accum last 32 chars: ");
+    Serial.println(g_rasterAccum.substring(g_rasterAccum.length() - 32));
+
+    // 解 base64 出前 16 字节 hex（不发打印机，只 Serial 打印）
+    {
+      uint32_t buf = 0;
+      int bits = 0;
+      size_t outBytes = 0;
+      Serial.print("[diag] first 16 decoded bytes: ");
+      for (size_t i = 0; i < g_rasterAccum.length() && outBytes < 16; i++) {
+        char c = g_rasterAccum[i];
+        if (c == '=') break;
+        int v = base64Index(c);
+        if (v < 0) continue;
+        buf = (buf << 6) | (uint32_t)v;
+        bits += 6;
+        if (bits >= 8) {
+          bits -= 8;
+          uint8_t byte = (uint8_t)((buf >> bits) & 0xFF);
+          if (byte < 0x10) Serial.print('0');
+          Serial.print(byte, HEX);
+          Serial.print(' ');
+          outBytes++;
+        }
+      }
+      Serial.println();
+    }
+
     // ESC @ 初始化（放在 final 时做，不在 seq=0 做——避免中途收到错块后
     // 打印机已经初始化、但数据没来，下次连进来又被初始化一次）
     printerWriteFlow(0x1B);
     printerWriteFlow(0x40);
     delay(50);
 
-    // ESC 7 n1 n2 n3：把加热时间拉到接近最大，让每个像素无论电机是否
-    // 临时停一下都能烧透——这样密度均匀、和屏幕上 p5 小票纯黑一致
-    // 参考 MY-628 规格书 P53。
-    //   n1=09  最多加热点 80 点（默认）
-    //   n2=FF  加热时间 2550µs（最大值，文档示例最高用 1600µs，这里再压满）
-    //   n3=08  加热间隔 80µs（默认 20µs；拉大点缓解峰值电流，让供电更稳）
-    printerWriteFlow(0x1B);
-    printerWriteFlow(0x37);
-    printerWriteFlow(0x09);
-    printerWriteFlow(0xFF);
-    printerWriteFlow(0x08);
-    delay(10);
+    // 诊断：暂时移除 ESC 7。位图整片乱码的现象（文本路径在 57600 干净，
+    // 位图路径整片走文本模式）指向命令前缀污染。ESC 7 是位图路径独有的
+    // 5 字节序列，若 MY-628 实际芯片对它的参数解释跟规格书 P53 不一致，
+    // 这 5 字节会留下解析状态，把紧跟的 GS v 0 头 0x1D 当成普通文本字节。
+    // 先去掉看 GS v 0 能否被正确解析（位图正常打出但浓度可能偏淡）。
+    // 浓度问题不是这次要解决的——先确认位图路径不被命令前缀污染。
 
     size_t printedBytes = streamBase64ToPrinter(g_rasterAccum);
 
@@ -461,7 +502,7 @@ static void handlePrintRaster() {
 
 void setup() {
   Serial.begin(115200);
-  Printer.begin(9600, SERIAL_8N1, 1, 2);  // RX=1, TX=2
+  Printer.begin(57600, SERIAL_8N1, 1, 2);  // RX=1, TX=2（打印机用 PrinterSetting 改成 57600，链路裕量足够，不再出乱码）
   pinMode(PRINTER_DTR_PIN, INPUT_PULLUP);  // DTR 没接时默认 BUSY（不发），安全
   delay(500);
 

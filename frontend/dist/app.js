@@ -95881,7 +95881,16 @@ function canvasToEscPosRaster(canvas2, threshold = 180) {
       bitmap[y * xBytes + xByte] = byte;
     }
   }
-  const header = new Uint8Array([29, 118, 48, 0, xBytes & 255, xBytes >> 8 & 255, targetHeight & 255, targetHeight >> 8 & 255]);
+  const header = new Uint8Array([
+    29,
+    118,
+    48,
+    0,
+    xBytes & 255,
+    xBytes >> 8 & 255,
+    targetHeight & 255,
+    targetHeight >> 8 & 255
+  ]);
   return concatBytes(header, bitmap);
 }
 function concatBytes(...arrays) {
