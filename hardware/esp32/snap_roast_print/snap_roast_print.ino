@@ -325,17 +325,24 @@ static void handleRasterChunk() {
     printerWriteFlow(0x40);
     delay(50);
 
-    // ESC 7 n1 n2 n3：把加热时间拉到接近最大，让每个像素无论电机是否
-    // 临时停一下都能烧透——这样密度均匀、和屏幕上 p5 小票纯黑一致
+    // ESC 7 n1 n2 n3：把打印速度刻意降到比 UART 数据率更慢，
+    // 让电机匀速跑而不是"打一下停一下"。算式：
+    //   UART 数据率 = 9600bps / 10bit / 48字节 ≈ 20 行/秒
+    //   打印率 = 1000ms / (384/8/(n1+1) × (n2+n3) × 10µs / 1000)
+    //   要求打印率 < 20 行/秒，电机才不会饿停。
     // 参考 MY-628 规格书 P53。
-    //   n1=09  最多加热点 80 点（默认）
-    //   n2=FF  加热时间 2550µs（最大值，文档示例最高用 1600µs，这里再压满）
-    //   n3=08  加热间隔 80µs（默认 20µs；拉大点缓解峰值电流，让供电更稳）
+    //   n1=01  最多加热 16 点/周期（默认 80 点），降低峰值电流，
+    //          每行需 24 个加热周期，整行变慢——这是把电机降速的关键
+    //   n2=FF  加热时间 2550µs（最大），每个像素烧透，浓度顶
+    //   n3=80  加热间隔 1280µs（默认 20µs），周期间留时间让 UART 补料
+    // 算下来 24 × (2550+1280)µs ≈ 92ms/行 ≈ 10.9 行/秒，
+    // 比 UART 20 行/秒慢一半，缓冲始终有料，电机匀速。
+    // 代价：整张图打完时间约翻倍，但视觉一致性远好于断续打印。
     printerWriteFlow(0x1B);
     printerWriteFlow(0x37);
-    printerWriteFlow(0x09);
+    printerWriteFlow(0x01);
     printerWriteFlow(0xFF);
-    printerWriteFlow(0x08);
+    printerWriteFlow(0x80);
     delay(10);
 
     size_t printedBytes = streamBase64ToPrinter(g_rasterAccum);
