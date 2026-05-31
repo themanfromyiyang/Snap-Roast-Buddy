@@ -21,6 +21,22 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <HardwareSerial.h>
+#include <WiFiClientSecure.h>
+#include <PubSubClient.h>
+
+// ---- 硬件快门按钮 + MQTT 中转 ----
+#define BUTTON_PIN 4
+#define BUTTON_DEBOUNCE_MS 30
+const char* MQTT_HOST = "broker.emqx.io";
+const int   MQTT_PORT = 8883;                                      // 原生 MQTT over TLS
+const char* MQTT_TOPIC = "snap-roast/db298f0eed7aa043/shutter";    // 与浏览器端必须一致
+
+static WiFiClientSecure mqttNet;
+static PubSubClient     mqtt(mqttNet);
+
+static int      btnLastLevel  = LOW;
+static uint32_t btnLastEdgeMs = 0;
+static uint32_t mqttLastTryMs = 0;
 
 const char* ssid     = "iPhone on the beach";
 const char* password = "Qwer123321";
@@ -427,6 +443,39 @@ static void handlePrintChunk() {
   }
 }
 
+// 非阻塞重连：每 3 秒最多尝试一次，避免 loop 卡死
+static void mqttEnsureConnected() {
+  if (mqtt.connected()) return;
+  uint32_t now = millis();
+  if (now - mqttLastTryMs < 3000) return;
+  mqttLastTryMs = now;
+
+  String clientId = "snap-roast-esp32-" + String((uint32_t)ESP.getEfuseMac(), HEX);
+  Serial.print("MQTT 连接中... ");
+  if (mqtt.connect(clientId.c_str())) {
+    Serial.println("OK");
+  } else {
+    Serial.print("失败, state=");
+    Serial.println(mqtt.state());
+  }
+}
+
+// 上升沿 = 按下，发布一次按键事件
+static void buttonPoll() {
+  int level = digitalRead(BUTTON_PIN);
+  uint32_t now = millis();
+  if (level != btnLastLevel && (now - btnLastEdgeMs) > BUTTON_DEBOUNCE_MS) {
+    btnLastEdgeMs = now;
+    if (btnLastLevel == LOW && level == HIGH) {
+      char payload[32];
+      snprintf(payload, sizeof(payload), "{\"ts\":%lu}", now);
+      bool ok = mqtt.publish(MQTT_TOPIC, payload);
+      Serial.printf("按下 → publish %s (ok=%d)\n", payload, ok ? 1 : 0);
+    }
+    btnLastLevel = level;
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   pinMode(DTR_PIN, INPUT_PULLUP);
@@ -463,8 +512,15 @@ void setup() {
   server.begin();
   Serial.println("HTTP server 已启动 (端口 80)");
   Serial.println("浏览器访问: http://" + WiFi.localIP().toString() + "/");
+  pinMode(BUTTON_PIN, INPUT);          // 模块自带下拉
+  mqttNet.setInsecure();               // 跳过证书校验：公共 broker 不必校验
+  mqtt.setServer(MQTT_HOST, MQTT_PORT);
+  Serial.println("MQTT 客户端已初始化, topic=" + String(MQTT_TOPIC));
 }
 
 void loop() {
   server.handleClient();
+  mqttEnsureConnected();
+  mqtt.loop();
+  buttonPoll();
 }
