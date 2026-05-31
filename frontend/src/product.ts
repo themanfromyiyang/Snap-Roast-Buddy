@@ -34,6 +34,7 @@ type PhotoRecord = {
   ticketText?: string;
   sketchImageUrl?: string;
   sketchImageExpired?: boolean;
+  sketchGenerationError?: string;
   caption?: string;
 };
 
@@ -638,8 +639,14 @@ async function startGenerationFromSelected() {
     renderLatestThumb();
     showResult(0);
   } catch (error) {
+    const failedImageUrl = selectedImageUrl;
+    const message = error instanceof Error ? error.message : "生成失败，请换一张照片再试。";
     showCamera();
-    cameraHint.textContent = error instanceof Error ? error.message : "生成失败，请换一张照片再试。";
+    selectedImageUrl = failedImageUrl;
+    showSelectedImagePreview(failedImageUrl);
+    manualStartPanel.hidden = false;
+    cameraHint.textContent = message;
+    window.alert(message);
   } finally {
     window.clearInterval(messageTimer);
     window.cancelAnimationFrame(generationProgressFrame);
@@ -749,7 +756,14 @@ async function generateSnapRoastResult(imageUrl: string, productSettings: Produc
     };
   }
 
-  const sketchPromise = shouldAddSketch ? generateSketch(imageUrl) : undefined;
+  const sketchPromise = shouldAddSketch
+    ? generateSketch(imageUrl)
+        .then((sketchImageUrl) => ({ sketchImageUrl, sketchGenerationError: undefined }))
+        .catch((error: unknown) => ({
+          sketchImageUrl: undefined,
+          sketchGenerationError: error instanceof Error ? error.message : "Comic generation failed."
+        }))
+    : undefined;
 
   startGenerationPhase("analyze", "正在分析图片……", "正在把照片翻译成 Buddy 看得懂的描述。");
   const description = await analyzeImage(imageUrl);
@@ -774,9 +788,12 @@ async function generateSnapRoastResult(imageUrl: string, productSettings: Produc
   );
   await completeGenerationPhase("ticket");
   let sketchImageUrl: string | undefined;
+  let sketchGenerationError: string | undefined;
   if (sketchPromise) {
     startGenerationPhase("sketch", "正在生成漫画……", "漫画和内容已并行处理，正在合并最终结果。");
-    sketchImageUrl = await sketchPromise;
+    const sketchResult = await sketchPromise;
+    sketchImageUrl = sketchResult.sketchImageUrl;
+    sketchGenerationError = sketchResult.sketchGenerationError;
     await completeGenerationPhase("sketch");
   }
 
@@ -793,6 +810,7 @@ async function generateSnapRoastResult(imageUrl: string, productSettings: Produc
     ticketContent: layoutResult.content,
     ticketText: layoutResult.textPreview,
     sketchImageUrl,
+    sketchGenerationError,
     caption: roast.aiComment
   };
 }
@@ -1229,6 +1247,13 @@ function createTicketBody(record: PhotoRecord): HTMLElement {
     body.append(expired);
   }
 
+  if (record.sketchGenerationError) {
+    const failed = document.createElement("p");
+    failed.className = "expired-sketch-note";
+    failed.textContent = "漫画生成失败，但小票已经保留。可以稍后重新生成漫画。";
+    body.append(failed);
+  }
+
   return body;
 }
 
@@ -1546,10 +1571,16 @@ async function ensureProductRecordsLoaded() {
 }
 
 async function saveProductRecord(record: PhotoRecord): Promise<PhotoRecord> {
-  const payload = await postJson<ProductRecordsResponse>("/api/product-records", { record });
-  const savedRecord = payload.record ?? record;
-  await upsertCachedProductRecord(savedRecord);
-  return savedRecord;
+  try {
+    const payload = await postJson<ProductRecordsResponse>("/api/product-records", { record });
+    const savedRecord = payload.record ?? record;
+    await upsertCachedProductRecord(savedRecord);
+    return savedRecord;
+  } catch {
+    usingLocalRecordStore = true;
+    await upsertCachedProductRecord(record);
+    return record;
+  }
 }
 
 async function deleteProductRecord(id: string): Promise<void> {

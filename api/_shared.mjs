@@ -179,14 +179,12 @@ export async function handleGenerateDoodle(req, res) {
     const data = await completion.json();
     const imageResult = extractGeneratedImage(data);
     const imageDataUrl = imageResult.base64 ? "" : await downloadImageAsDataUrl(imageResult.url);
-    if (imageResult.url && !imageDataUrl) {
-      return sendJson(res, 502, { error: "Generated comic could not be persisted. Please retry." });
-    }
 
     return sendJson(res, 200, {
       imageUrl: imageDataUrl ? "" : imageResult.url,
       imageDataUrl,
       imageBase64: imageResult.base64,
+      persistenceWarning: Boolean(imageResult.url && !imageDataUrl),
       prompt,
       rawContent: data
     });
@@ -577,9 +575,6 @@ async function normalizeRecordImages(record) {
     const sketchDataUrl = await downloadImageAsDataUrl(record.sketchImageUrl);
     if (sketchDataUrl) {
       record.sketchImageUrl = sketchDataUrl;
-    } else {
-      record.sketchImageUrl = "";
-      record.sketchImageExpired = true;
     }
   }
   return record;
@@ -618,6 +613,7 @@ function fullRecordFromRow(row) {
     ticketHtml: record.ticketHtml ?? row.ticket_html ?? undefined,
     ticketText: record.ticketText ?? row.ticket_text ?? undefined,
     sketchImageUrl: record.sketchImageUrl ?? row.sketch_image_url ?? undefined,
+    sketchGenerationError: record.sketchGenerationError ?? undefined,
     caption: record.caption ?? row.caption ?? undefined
   };
 }
@@ -632,6 +628,7 @@ function toProductRecordRow(record) {
     roastLevel: cleanText(record.roastLevel),
     sketchMode: cleanText(record.sketchMode),
     ticketContent: record.ticketContent ?? null,
+    sketchGenerationError: cleanText(record.sketchGenerationError),
     caption: record.caption ?? null
   };
 
