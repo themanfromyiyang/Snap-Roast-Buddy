@@ -215,15 +215,20 @@ static void handlePrintBridge() {
   html += "const raw=location.hash.slice(1);";
   html += "if(!raw){s.textContent='错误：URL 没有 hash 数据';s.classList.add('err');return;}";
   html += "const b64=decodeURIComponent(raw);";
-  // 把 hash 原始长度 + 解码后 b64 长度都暴露在页面上，方便诊断 Safari 是否截了 URL hash
+  // 把 hash 原始长度 + 解码后 b64 长度都暴露在页面上，方便诊断 URL hash 是否被截
   html += "s.textContent='hash='+raw.length+' b64='+b64.length+'，发送中…';";
   html += "try{";
-  // 改用 text/plain 把 base64 当原始 body 发：绕开 ESP32 WebServer form 解析器
-  // 的 ~8KB 上限。ESP32 端用 server.arg('plain') 取整段 body。
-  html += "const r=await fetch('/print-raster',{method:'POST',headers:{'Content-Type':'text/plain'},body:b64});";
+  // ESP32 WebServer 的 text/plain 路径是非阻塞 client.available() 读，WiFi 抖一下
+  // body 就读不到（实测：第一次偶尔成功，第二次空 body）。改回 form-urlencoded，
+  // 库内部用 readBytes(contentLength) 阻塞读，稳。ESP32 端用 server.arg('data')。
+  html += "const form=new URLSearchParams();form.set('data',b64);";
+  html += "const r=await fetch('/print-raster',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:form.toString()});";
   html += "const t=await r.text();";
-  html += "document.open();document.write(t);document.close();";
-  html += "}catch(e){s.textContent='出错: '+e.message;s.classList.add('err');}";
+  // 成功才覆盖整页（ESP32 返回的"已打印"HTML）。失败保留诊断信息在状态行上，
+  // 否则 4xx 错误页会盖掉 b64 长度，没法判断到底是 body 没发出去还是库限制。
+  html += "if(r.ok){document.open();document.write(t);document.close();}";
+  html += "else{s.innerHTML+='<br>HTTP '+r.status+': '+t.replace(/<[^>]+>/g,'').slice(0,300);s.classList.add('err');}";
+  html += "}catch(e){s.textContent+=' / 出错: '+e.message;s.classList.add('err');}";
   html += "})();";
   html += "</script>";
   html += "<a href=\"javascript:history.back()\">← 返回</a>";
