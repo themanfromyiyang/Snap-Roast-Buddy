@@ -1787,8 +1787,15 @@ shutterMqttClient.on("message", (_topic, payload) => {
     const { ts } = JSON.parse(payload.toString()) as { ts?: number };
     if (typeof ts !== "number" || ts === lastShutterTs) return;
     lastShutterTs = ts;
-    console.log("[shutter-mqtt] press received, ts=", ts);
-    shutterButton.click();
+    if (!cameraScreen.hidden) {
+      console.log("[shutter-mqtt] press → shutter (camera), ts=", ts);
+      shutterButton.click();
+    } else if (!resultScreen.hidden) {
+      console.log("[shutter-mqtt] press → print (result), ts=", ts);
+      printButton.click();
+    } else {
+      console.log("[shutter-mqtt] press ignored (no actionable screen), ts=", ts);
+    }
   } catch (e) {
     console.warn("[shutter-mqtt] bad payload", e);
   }
