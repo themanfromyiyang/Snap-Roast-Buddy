@@ -157,10 +157,13 @@ export function getReceiptHeight(mode: "simple" | "bigText" | "face", roastLevel
   const intensity = getRoastIntensity(roastLevel);
   if (mode === "simple") {
     const textLoad = data.findings.join("").length + data.roast.length + data.advice.length + data.verdict.length;
-    const itemCount = Math.min(8, 4 + data.findings.length + Math.round(intensity * 3));
-    return Math.round(900 + itemCount * 24 + intensity * 520 + Math.min(360, textLoad * (0.75 + intensity * 0.8)));
+    const itemCount = Math.min(8, 4 + data.findings.length + Math.round(intensity * 2));
+    return Math.round(1040 + itemCount * 30 + intensity * 460 + Math.min(300, textLoad * (0.55 + intensity * 0.55)));
   }
-  if (mode === "bigText") return Math.round(830 + intensity * 420 + Math.min(180, data.oneLineRoast.length * 4));
+  if (mode === "bigText") {
+    const levelHeight = intensity <= 0.25 ? 720 : intensity <= 0.5 ? 930 : intensity <= 0.75 ? 1240 : 1580;
+    return Math.round(levelHeight + Math.min(150, data.oneLineRoast.length * (2 + intensity * 2)));
+  }
   return Math.round(870 + intensity * 380 + Math.min(160, data.shortComment.length * 3));
 }
 
@@ -495,7 +498,7 @@ function drawMetricBar(
   p.textSize(9.5);
   p.text(clipText(metric.label, 6), x, y);
   p.textStyle(p.NORMAL);
-  p.textSize(8);
+  p.textSize(11);
   p.text(metric.note, x, y + 11);
 
   p.textAlign(p.RIGHT, p.TOP);
@@ -575,7 +578,7 @@ function drawInsightDashboard(
   p.fill(255);
   p.textAlign(p.CENTER, p.TOP);
   p.textStyle(p.BOLD);
-  p.textSize(10);
+  p.textSize(12);
   p.text("主证据", margin + 26, y + 8);
   p.textSize(8);
   p.text("EVID.", margin + 26, y + 25);
@@ -664,54 +667,42 @@ function drawMachineHeader(
   p.textFont(fontStack);
   p.textAlign(p.LEFT, p.TOP);
   p.textStyle(p.BOLD);
-  p.textSize(8.5);
+  p.textSize(13);
   p.text("SNAP ROAST BUDDY", margin, y);
   p.textAlign(p.RIGHT, p.TOP);
+  p.textStyle(p.NORMAL);
+  p.textSize(11);
   p.text(meta.evidenceNo, receiptWidth - margin, y);
-  y += 16;
-
-  p.textAlign(p.LEFT, p.TOP);
-  p.textStyle(p.BOLD);
-  p.textSize(28);
-  p.text(meta.title, margin, y);
-  p.textAlign(p.RIGHT, p.TOP);
-  p.textSize(8.5);
-  p.text("手机拍照组合外设", receiptWidth - margin, y + 1);
-  p.text("照片理解 -> 纸条输出", receiptWidth - margin, y + 15);
-  p.text("吐槽 / 点评 / 表情", receiptWidth - margin, y + 29);
-  y += 46;
+  y += 22;
 
   drawDoubleRule(p, margin, y, receiptWidth - margin, intensity);
-  y += 12;
+  y += 13;
 
   const primary = variant === "poster" ? "排版模式" : variant === "mood" ? "情绪模式" : "检测模式";
   const rows = [
     [primary, `${meta.modeLabel} / ${meta.modeCode}`],
     ["吐槽强度", `${meta.roastLabel} / ${meta.roastCode}`],
-    ["生成时间", meta.issuedAt],
-    ["场景/情绪", `${meta.scene} / ${meta.mood}`]
+    ["生成时间", meta.issuedAt]
   ];
 
   p.textAlign(p.LEFT, p.TOP);
   p.textStyle(p.BOLD);
-  p.textSize(9.5);
+  p.textSize(12);
   rows.forEach(([label, value], index) => {
-    const rowY = y + index * 15;
+    const rowY = y + index * 19;
     p.text(label, margin, rowY);
     p.textStyle(p.NORMAL);
-    p.text(clipText(value, 22), margin + 72, rowY);
+    p.text(clipText(value, 22), margin + 82, rowY);
     p.textStyle(p.BOLD);
     if (index < rows.length - 1) {
       p.stroke(0, 35);
       p.strokeWeight(1);
-      p.line(margin, rowY + 12, margin + width, rowY + 12);
+      p.line(margin, rowY + 15, margin + width, rowY + 15);
       p.noStroke();
     }
   });
 
-  y += rows.length * 15 + 10;
-  y = drawInsightDashboard(p, data, mode, margin, y, width, intensity);
-  y += 4;
+  y += rows.length * 19 + 7;
   drawDoubleRule(p, margin, y, receiptWidth - margin, intensity);
   return y + 14;
 }
@@ -752,50 +743,179 @@ function drawReceipt(
 function renderSimpleReceiptCanvas(p: p5, data: NormalizedReceiptData, intensity: number, height: number, roastLevel: RoastLevel) {
   const margin = 22;
   const width = receiptWidth - margin * 2;
-  let y = drawReceiptStoreHeader(p, data, margin, intensity, roastLevel);
-  y = drawReceiptMetaBlock(p, data, margin, y, width, intensity);
+  const tags = extractShortWords(data);
+  const chaos = Math.max(0, intensity - 0.55);
+  let y = drawSimpleReceiptHeader(p, data, margin, width, intensity, roastLevel);
 
-  drawDoubleRule(p, margin, y, receiptWidth - margin, intensity);
-  y += 15;
+  y = drawSimpleSectionHeading(p, "今日判词", margin, y, width, intensity);
+  y = drawSimpleParagraph(p, data.roast || data.oneLineRoast, margin, y, width, 18 + intensity * 2, 27, chaos * 0.2);
 
+  y = drawSimpleSectionHeading(p, "画面主角", margin, y + 9, width, intensity);
+  y = drawSimpleKeyValue(p, "主角", data.photoType, margin, y, width, chaos);
+  y = drawSimpleKeyValue(p, "场景", data.atmosphere, margin, y, width, chaos);
+  y = drawSimpleKeyValue(p, "氛围", data.aiMood || data.moodLabel, margin, y, width, chaos);
+  y = drawSimpleKeyValue(p, "隐藏剧情", data.findings[0] || data.verdict, margin, y, width, chaos);
+
+  y = drawSimpleSectionHeading(p, "照片诊断", margin, y + 7, width, intensity);
+  y = drawSimpleDiagnosis(p, data, margin, y, width, intensity);
+
+  y = drawSimpleSectionHeading(p, "本张照片消费明细", margin, y + 7, width, intensity);
+  y = drawSimpleCharges(p, data, margin, y, width, intensity);
+
+  p.textAlign(p.LEFT, p.TOP);
+  p.textStyle(p.BOLD);
+  p.textSize(16);
+  p.text("合计：", margin, y + 4);
+  y = drawSimpleParagraph(p, data.verdict, margin, y + 28, width, 17 + intensity, 25, chaos * 0.18);
+
+  y = drawSimpleSectionHeading(p, "AI 建议", margin, y + 8, width, intensity);
+  const adviceLines = splitAdvice(data.advice || data.tinyAdvice).slice(0, intensity >= 0.7 ? 3 : 2);
+  for (const advice of adviceLines) {
+    y = drawSimpleParagraph(p, `• ${advice}`, margin, y, width, 15, 23, chaos * 0.12);
+  }
+
+  y = drawSimpleSectionHeading(p, "今日标签", margin, y + 8, width, intensity);
+  p.textAlign(p.LEFT, p.TOP);
+  p.textStyle(p.BOLD);
+  p.textSize(15);
+  for (const tag of tags.slice(0, 3 + Math.round(intensity * 2))) {
+    p.text(`#${clipText(tag.replace(/^#+/, ""), 10)}`, margin, y);
+    y += 22;
+  }
+
+  if (intensity >= 0.68) {
+    drawStamp(p, intensity >= 1 ? "事故存档" : "重点观察", 286 + jitter(8, intensity), 228 + intensity * 40, 76 + intensity * 12, -0.18);
+  }
+  if (intensity >= 1) {
+    const blockY = Math.max(y + 24, height - 270);
+    drawTextDensityBlock(p, [data.roast, data.verdict, ...tags], margin - 4, blockY, width + 8, Math.max(118, height - blockY - 94), 0.48);
+  }
+
+  drawSimpleReceiptEnding(p, margin, height, width, intensity, roastLevel);
+}
+
+function drawSimpleReceiptHeader(
+  p: p5,
+  data: NormalizedReceiptData,
+  margin: number,
+  width: number,
+  intensity: number,
+  roastLevel: RoastLevel
+) {
+  const meta = buildMachineMeta(data, "receipt", roastLevel);
+  let y = 24;
+  drawDashedLine(p, margin, y, receiptWidth - margin, 8, 5);
+  y += 18;
   p.noStroke();
   p.fill(0);
-  p.textStyle(p.BOLD);
-  p.textSize(11);
-  p.textAlign(p.LEFT, p.TOP);
-  p.text("品名 / 检测项目", margin, y);
   p.textAlign(p.CENTER, p.TOP);
-  p.text("点数", receiptWidth - 118, y);
+  p.textStyle(p.BOLD);
+  p.textSize(22);
+  p.text("SNAP ROAST BUDDY", receiptWidth / 2, y);
+  y += 29;
+  p.textSize(15);
+  p.text("PHOTO RECEIPT", receiptWidth / 2, y);
+  y += 25;
+  drawDashedLine(p, margin, y, receiptWidth - margin, 8, 5);
+  y += 15;
+  p.textAlign(p.LEFT, p.TOP);
+  p.textStyle(p.NORMAL);
+  p.textSize(15);
+  p.text(meta.evidenceNo, margin, y);
   p.textAlign(p.RIGHT, p.TOP);
-  p.text("金额", receiptWidth - margin, y);
-  y += 19;
-  drawFineRule(p, margin, y, receiptWidth - margin, intensity);
-  y += 12;
+  p.text(meta.issuedAt, margin + width, y);
+  return y + 26;
+}
 
-  const lineItems = buildReceiptLineItems(data, intensity, roastLevel);
-  for (const [index, item] of lineItems.entries()) {
-    y = drawReceiptItemRow(p, item, margin, y, width, intensity, index);
+function drawSimpleSectionHeading(p: p5, label: string, margin: number, y: number, width: number, intensity: number) {
+  drawDashedLine(p, margin, y, margin + width, intensity >= 0.75 ? 6 : 9, 5);
+  y += 15;
+  p.noStroke();
+  p.fill(0);
+  p.textAlign(p.LEFT, p.TOP);
+  p.textStyle(p.BOLD);
+  p.textSize(16);
+  p.text(label, margin, y);
+  return y + 27;
+}
+
+function drawSimpleParagraph(p: p5, text: string, x: number, y: number, width: number, size: number, leading: number, chaos = 0) {
+  p.noStroke();
+  p.fill(0);
+  p.textAlign(p.LEFT, p.TOP);
+  p.textStyle(p.NORMAL);
+  p.textSize(size);
+  return drawWrappedLine(p, text, x, y, width, size, leading, chaos) + 4;
+}
+
+function drawSimpleKeyValue(p: p5, label: string, value: string, x: number, y: number, width: number, chaos: number) {
+  p.noStroke();
+  p.fill(0);
+  p.textAlign(p.LEFT, p.TOP);
+  p.textStyle(p.BOLD);
+  p.textSize(15);
+  p.text(`${label}：`, x, y);
+  p.textStyle(p.NORMAL);
+  p.textSize(15);
+  return drawWrappedLine(p, value, x + 76, y, width - 76, 15, 22, chaos * 0.12) + 2;
+}
+
+function drawSimpleDiagnosis(p: p5, data: NormalizedReceiptData, x: number, y: number, width: number, intensity: number) {
+  const scores = data.scores.length
+    ? data.scores.slice(0, 5)
+    : [{ label: "画面可信度", value: 60 }];
+  for (const score of scores) {
+    const value = Math.max(0, Math.min(100, Number(score.value) || 0));
+    const blocks = Math.round(value / 10);
+    p.noStroke();
+    p.fill(0);
+    p.textAlign(p.LEFT, p.TOP);
+    p.textStyle(p.NORMAL);
+    p.textSize(14);
+    p.text(`${clipText(score.label, 7)}：`, x, y);
+    p.textStyle(p.BOLD);
+    p.textSize(14);
+    p.text(`${"█".repeat(blocks)}${"░".repeat(10 - blocks)}`, x + 104, y);
+    p.textAlign(p.RIGHT, p.TOP);
+    p.text(`${Math.round(value / 10)}/10`, x + width, y);
+    y += intensity >= 0.9 ? 21 : 24;
   }
+  return y + 3;
+}
 
-  y += 4;
-  drawFineRule(p, margin, y, receiptWidth - margin, intensity);
-  y = drawReceiptTotalBlock(p, data, margin, y + 12, width, intensity);
+function drawSimpleCharges(p: p5, data: NormalizedReceiptData, x: number, y: number, width: number, intensity: number) {
+  const findings = data.findings.length ? data.findings : [data.photoType, data.atmosphere];
+  const rows = findings.slice(0, 3 + Math.round(intensity * 2));
+  rows.forEach((finding, index) => {
+    p.noStroke();
+    p.fill(0);
+    p.textAlign(p.LEFT, p.TOP);
+    p.textStyle(p.NORMAL);
+    p.textSize(15);
+    p.text(`${clipText(finding, 14)}费`, x, y);
+    p.textAlign(p.RIGHT, p.TOP);
+    p.textStyle(p.BOLD);
+    p.text(index === rows.length - 1 && intensity < 0.55 ? "-1" : `+${index + 1}`, x + width, y);
+    y += 23;
+  });
+  return y + 6;
+}
 
-  y += 14;
-  y = drawReceiptCommentBlock(p, [data.roast, data.advice, data.verdict], margin, y, width, height, intensity);
+function splitAdvice(text: string) {
+  const parts = String(text || "").split(/[。！？!?；;\n]+/).map((item) => item.trim()).filter(Boolean);
+  return parts.length ? parts : ["靠近一点拍，减少背景干扰"];
+}
 
-  const tags = extractShortWords(data);
-  if (intensity >= 0.68) {
-    drawStamp(p, intensity >= 1 ? "事故存档" : "重点观察", 272 + jitter(10, intensity), 202 + intensity * 72, 84 + intensity * 18, -0.2);
-    drawReceiptChaosNotes(p, tags, y, height, intensity);
-  }
-
-  if (intensity >= 1) {
-    const blockY = Math.max(y + 34, height - 300);
-    drawTextDensityBlock(p, [data.roast, data.verdict, ...tags], margin - 4, blockY, width + 8, Math.max(120, height - blockY - 86), 0.38);
-  }
-
-  drawReceiptFooter(p, data, margin, height, width, intensity, "receipt", roastLevel);
+function drawSimpleReceiptEnding(p: p5, margin: number, height: number, width: number, intensity: number, roastLevel: RoastLevel) {
+  const y = height - 76;
+  drawDashedLine(p, margin, y, margin + width, 8, 5);
+  p.noStroke();
+  p.fill(0);
+  p.textAlign(p.CENTER, p.TOP);
+  p.textStyle(p.BOLD);
+  p.textSize(18);
+  p.text(roastLevel === "gentle" ? "( ´ ▽ ` )ﾉ  📷" : "(╯°□°）╯︵  📷", receiptWidth / 2, y + 18);
+  drawDashedLine(p, margin, y + 58, margin + width, 8, 5);
 }
 
 function drawReceiptStoreHeader(p: p5, data: NormalizedReceiptData, margin: number, intensity: number, roastLevel: RoastLevel) {
@@ -1006,11 +1126,11 @@ function drawReceiptFooter(
 
   p.noStroke();
   p.fill(0);
-  p.textSize(8);
+  p.textSize(11);
   p.textStyle(p.BOLD);
   p.textAlign(p.CENTER, p.TOP);
-  p.text("拍立怼把照片从屏幕记录变成可收藏、可分享、可围观的实体互动。", receiptWidth / 2, y - 34);
-  p.textSize(10);
+  p.text("SNAP ROAST BUDDY / PHOTO RECEIPT", receiptWidth / 2, y - 34);
+  p.textSize(13);
   p.textStyle(p.NORMAL);
   p.textAlign(p.LEFT, p.TOP);
   p.text(`${meta.modeCode} No.${receiptNumber(data.roast, 4)}`, margin, height - 30);
@@ -1038,14 +1158,17 @@ function renderBigTextReceiptCanvas(p: p5, data: NormalizedReceiptData, intensit
   const roman = romanizePosterLabel(data.photoType || data.topLabel || "SNAP ROAST");
   let y = drawBigPosterHeader(p, data, title, roman, margin, intensity, roastLevel);
 
-  if (intensity < 0.68) {
+  if (intensity < 0.4) {
     y = drawCalmBigTextPoster(p, title, subtitle, notes, margin, y, height, intensity);
+  } else if (intensity < 0.68) {
+    y = drawLayeredBigTextPoster(p, title, subtitle, notes, margin, y, height, intensity);
   } else {
     y = drawWildBigTextPoster(p, title, subtitle, notes, margin, y, height, intensity, roastLevel);
   }
 
   y = drawBigTextFootnotes(p, notes, margin, Math.min(y + 12, height - 178), height, intensity);
   if (intensity >= 0.72) drawBigTextLooseLabels(p, notes, title, height, intensity);
+  if (intensity >= 0.98) drawBigTextExecutionNoise(p, title, notes, margin, height, intensity);
   drawBigPosterFooter(p, data, phrase, margin, height, intensity, roastLevel);
 }
 
@@ -1084,7 +1207,7 @@ function drawBigPosterHeader(
   p.textSize(13);
   p.text(data.topLabel || "CUO WEI JIE JU", receiptWidth / 2, y);
   y += 20;
-  p.textSize(8);
+  p.textSize(11);
   p.text(roman, receiptWidth / 2, y);
   return y + 24;
 }
@@ -1100,7 +1223,7 @@ function drawCalmBigTextPoster(
   intensity: number
 ) {
   const frameTop = startY;
-  const frameHeight = Math.min(420, height - startY - 210);
+  const frameHeight = Math.min(330, height - startY - 188);
   const centerX = receiptWidth / 2;
 
   p.push();
@@ -1114,7 +1237,7 @@ function drawCalmBigTextPoster(
 
   drawVerticalPosterText(p, title, centerX + 10, frameTop + 30, frameHeight - 70, 74, 0);
   drawRotatedMicroText(p, subtitle, margin + 34, frameTop + frameHeight - 34, frameHeight - 70, -Math.PI / 2, 11, 0);
-  drawRotatedMicroText(p, "SNAP ROAST / BIG TYPE / GUIDE SERIES", receiptWidth - margin - 30, frameTop + 34, frameHeight - 68, Math.PI / 2, 9, 0);
+  drawRotatedMicroText(p, "SNAP ROAST / BIG TYPE / GUIDE SERIES", receiptWidth - margin - 30, frameTop + 34, frameHeight - 68, Math.PI / 2, 11, 0);
 
   p.noStroke();
   p.fill(0);
@@ -1123,13 +1246,45 @@ function drawCalmBigTextPoster(
   p.textSize(13);
   p.text("错 位 结 局", margin + 18, frameTop + 28);
   p.textStyle(p.NORMAL);
-  p.textSize(10);
-  drawWrappedLine(p, notes[0] || "现场判定", margin + 18, frameTop + frameHeight - 88, 74, 10, 15, 0);
+  p.textSize(12);
+  drawWrappedLine(p, notes[0] || "现场判定", margin + 18, frameTop + frameHeight - 88, 74, 12, 17, 0);
 
-  const bandY = frameTop + frameHeight + 18;
+  const bandY = frameTop + frameHeight + 14;
   drawTitleBand(p, splitPosterTitle(title).join(" "), bandY, 54, false, 0, intensity, "CUO WEI JIE JU");
-  drawBigPosterMicroColumns(p, notes, margin, bandY + 78, 128, intensity);
-  return bandY + 240;
+  return bandY + 76;
+}
+
+function drawLayeredBigTextPoster(
+  p: p5,
+  title: string,
+  subtitle: string,
+  notes: string[],
+  margin: number,
+  startY: number,
+  height: number,
+  intensity: number
+) {
+  const parts = splitPosterTitle(title);
+  const first = parts[0] || title;
+  const second = parts.slice(1).join("") || title;
+  const chaos = Math.max(0.08, intensity - 0.35);
+  let y = startY;
+
+  drawTitleBand(p, first, y, 76, true, -0.035, intensity, "TYPOGRAPHIC EVIDENCE");
+  y += 68;
+  drawTitleBand(p, second, y, 88, false, 0.045, intensity, "ROAST WITH THE DAWN");
+  y += 78;
+  drawTitleBand(p, title, y, 72, true, -0.025, intensity, "DISPLAY ONLY");
+
+  p.push();
+  p.translate(receiptWidth / 2 + 8, y + 184);
+  p.rotate(-0.09);
+  drawVerticalPosterText(p, title, 0, -98, 214, 82, chaos);
+  p.pop();
+
+  drawWaveTextLine(p, subtitle, margin, y + 206, receiptWidth - margin * 2, 17 + intensity * 4, intensity);
+  drawBigPosterMicroColumns(p, notes, margin, Math.min(height - 246, y + 242), 112, intensity);
+  return y + 360;
 }
 
 function drawWildBigTextPoster(
@@ -1149,9 +1304,9 @@ function drawWildBigTextPoster(
   const parts = splitPosterTitle(title);
 
   drawTitleBand(p, parts[0] || title, y, 70 + intensity * 22, true, -0.025 - chaos * 0.08, intensity, "CUO WEI JIE JU");
-  y += 88 - chaos * 18;
+  y += 72 - chaos * 18;
   drawTitleBand(p, parts.slice(1).join("") || subtitle.slice(0, 8), y, 84 + intensity * 28, false, 0.035 + chaos * 0.11, intensity, "ROAST WITH THE DAWN");
-  y += 104 - chaos * 26;
+  y += 82 - chaos * 26;
 
   p.push();
   p.translate(receiptWidth / 2 + jitter(18, chaos), y + 128);
@@ -1160,9 +1315,9 @@ function drawWildBigTextPoster(
   p.pop();
 
   drawRotatedMicroText(p, subtitle, margin + 20, y + 298, 250, -Math.PI / 2 + chaos * 0.16, 11 + intensity * 2, chaos);
-  drawRotatedMicroText(p, "UNAUTHORIZED REPRINTING OF THIS ROAST IS ENCOURAGED", receiptWidth - margin - 18, y + 32, 260, Math.PI / 2 - chaos * 0.18, 8, chaos);
+  drawRotatedMicroText(p, "UNAUTHORIZED REPRINTING OF THIS ROAST IS ENCOURAGED", receiptWidth - margin - 18, y + 32, 260, Math.PI / 2 - chaos * 0.18, 11, chaos);
 
-  const midBand = Math.min(y + 292, safeBottom - 250);
+  const midBand = Math.min(y + 272, safeBottom - 250);
   drawTitleBand(p, `${parts[0] || title} | ${parts[1] || "共舞"}`, midBand, 64 + intensity * 14, true, 0.02 + chaos * 0.16, intensity, "DISPLAY ONLY");
   drawWaveTextLine(p, subtitle, margin, midBand + 100, receiptWidth - margin * 2, 18 + intensity * 4, intensity);
   drawBigPosterMicroColumns(p, notes, margin, midBand + 132, 150 + intensity * 80, intensity);
@@ -1175,6 +1330,14 @@ function drawWildBigTextPoster(
   }
 
   return midBand + 250;
+}
+
+function drawBigTextExecutionNoise(p: p5, title: string, notes: string[], margin: number, height: number, intensity: number) {
+  const startY = height - 390;
+  const phrases = [title, ...notes].filter(Boolean);
+  drawTextDensityBlock(p, phrases, margin - 6, startY, receiptWidth - margin * 2 + 12, 212, intensity);
+  drawOverprintTitle(p, title, receiptWidth / 2, height - 246, 82, intensity);
+  drawSpeedLines(p, margin - 8, height - 188, receiptWidth - margin * 2 + 16, 12, -0.08);
 }
 
 function drawTitleBand(
@@ -1217,7 +1380,7 @@ function drawTitleBand(
 
   if (sideText) {
     p.textStyle(p.BOLD);
-    p.textSize(9 + intensity * 2);
+    p.textSize(11 + intensity * 2);
     p.textAlign(p.LEFT, p.CENTER);
     p.text(clipText(sideText.toUpperCase(), 25), -receiptWidth / 2 + 28, bandHeight / 2 - 12);
     p.textAlign(p.RIGHT, p.CENTER);
@@ -1274,13 +1437,13 @@ function drawBigPosterMicroColumns(p: p5, notes: string[], x: number, y: number,
   p.noStroke();
   p.fill(0);
   p.textStyle(p.NORMAL);
-  p.textSize(8 + intensity * 1.5);
+  p.textSize(11 + intensity);
   for (let col = 0; col < columns; col += 1) {
     const note = String(notes[col % notes.length] || "现场判定");
     const lines = wrapChineseText(p, note.repeat(intensity >= 0.75 ? 2 : 1), colWidth - 10);
     p.textAlign(p.LEFT, p.TOP);
-    lines.slice(0, Math.max(3, Math.floor(height / 13))).forEach((line, index) => {
-      p.text(line, x + col * colWidth + jitter(4, chaos), y + index * 13 + jitter(4, chaos));
+    lines.slice(0, Math.max(3, Math.floor(height / 16))).forEach((line, index) => {
+      p.text(line, x + col * colWidth + jitter(4, chaos), y + index * 16 + jitter(4, chaos));
     });
   }
 }
@@ -1332,7 +1495,7 @@ function drawBigTextFootnotes(p: p5, notes: string[], margin: number, y: number,
   p.fill(0);
   p.textAlign(p.LEFT, p.TOP);
   p.textStyle(p.BOLD);
-  p.textSize(10);
+  p.textSize(13);
   p.text("TYPOGRAPHIC EVIDENCE / DISPLAY COPY", margin, y);
   y += 16;
 
@@ -1373,7 +1536,7 @@ function drawBigPosterFooter(p: p5, data: NormalizedReceiptData, phrase: string,
   p.textAlign(p.LEFT, p.TOP);
   p.text("2026", margin, height - 34);
   p.textStyle(p.NORMAL);
-  p.textSize(8);
+  p.textSize(11);
   p.textAlign(p.RIGHT, p.TOP);
   p.text(`${meta.evidenceNo} / ${receiptNumber(phrase + data.verdict, 6)}`, receiptWidth - margin, height - 30);
 }
@@ -1432,18 +1595,18 @@ function drawKaomojiHeader(
   p.fill(0);
   p.textAlign(p.CENTER, p.TOP);
   p.textStyle(p.BOLD);
-  p.textSize(10);
+  p.textSize(13);
   p.text("KAOMOJI MOOD RECEIPT / 顔文字判定", receiptWidth / 2, y);
   drawPseudoQr(p, receiptWidth - margin - 38, y - 4, 36, intensity);
   y += 28;
   drawDoubleRule(p, margin, y, receiptWidth - margin, intensity);
   y += 14;
 
-  p.textSize(13);
+  p.textSize(15);
   p.text(data.moodLabel || "BUDDY FACE", receiptWidth / 2, y);
   y += 18;
   p.textStyle(p.NORMAL);
-  p.textSize(8);
+  p.textSize(12);
   p.text(mood.label, receiptWidth / 2, y);
   return y + 26;
 }
@@ -1476,20 +1639,20 @@ function drawCalmKaomojiReceipt(
   p.fill(0);
   p.textAlign(p.CENTER, p.CENTER);
   p.textStyle(p.BOLD);
-  p.textSize(11);
+  p.textSize(13);
   p.text("MOOD SAMPLE / DO NOT MISREAD", centerX, startY + 21);
   drawGiantKaomoji(p, mood.main, centerX, startY + frameHeight * 0.44, frameWidth - 142, 104, 0, 0);
 
   p.textAlign(p.LEFT, p.TOP);
   p.textStyle(p.BOLD);
-  p.textSize(11);
+  p.textSize(13);
   p.text("情绪标签", margin + 14, startY + 62);
   p.textStyle(p.NORMAL);
-  p.textSize(10);
-  drawWrappedLine(p, data.moodLabel || mood.label, margin + 14, startY + 84, 60, 10, 15, 0);
+  p.textSize(12);
+  drawWrappedLine(p, data.moodLabel || mood.label, margin + 14, startY + 84, 60, 12, 17, 0);
   p.textAlign(p.CENTER, p.TOP);
   p.textStyle(p.BOLD);
-  p.textSize(10);
+  p.textSize(12);
   p.text("颜文字样本", receiptWidth - margin - 39, startY + 62);
   mood.pool.slice(1, 4).forEach((face, index) => {
     p.textSize(14);
