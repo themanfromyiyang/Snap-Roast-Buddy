@@ -45,7 +45,12 @@ export function generateReceiptContent(
       { label: "画面秩序", value: 100 - Math.min(80, analysis.photoQualityIssues.length * 22 + analysis.chaosLevel / 3) },
       { label: "分享价值", value: Math.max(30, 82 - analysis.photoQualityIssues.length * 13 + analysis.cutenessLevel / 5) },
       { label: "光线友好", value: Math.max(24, 88 - (analysis.photoQualityIssues.some((issue) => issue.includes("光线") || issue.includes("暗")) ? 42 : 8)) },
-      { label: "主体稳定", value: Math.max(22, 86 - analysis.flaws.length * 9 - analysis.chaosLevel / 4) }
+      { label: "主体稳定", value: Math.max(22, 86 - analysis.flaws.length * 9 - analysis.chaosLevel / 4) },
+      { label: "背景克制", value: Math.max(18, 92 - analysis.chaosLevel - analysis.flaws.length * 5) },
+      { label: "情绪感染", value: Math.max(32, Math.min(96, 48 + analysis.cutenessLevel / 3 + analysis.awkwardLevel / 4)) },
+      { label: "时机准确", value: Math.max(24, 84 - analysis.awkwardLevel / 2 - analysis.photoQualityIssues.length * 7) },
+      { label: "空间层次", value: Math.max(28, 88 - analysis.chaosLevel / 2 - analysis.photoQualityIssues.length * 6) },
+      { label: "救片难度", value: Math.min(96, 24 + analysis.photoQualityIssues.length * 13 + analysis.chaosLevel / 3) }
     ],
     roast: generatedComment?.trim() || receiptRoast(analysis, roastLevel),
     advice: adviceFor(analysis),

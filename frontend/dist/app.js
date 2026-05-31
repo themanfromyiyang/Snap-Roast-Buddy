@@ -79,7 +79,28 @@ var sceneMap = [
   { type: "\u8FD0\u52A8\u5065\u8EAB\u73B0\u573A", keywords: ["\u8FD0\u52A8", "\u5065\u8EAB", "\u8DD1\u6B65", "\u7403\u573A", "\u7BEE\u7403", "\u8DB3\u7403", "\u745C\u4F3D", "\u9A91\u884C", "\u6ED1\u96EA"] },
   { type: "\u5C55\u89C8\u6F14\u51FA\u73B0\u573A", keywords: ["\u5C55\u89C8", "\u535A\u7269\u9986", "\u6F14\u5531\u4F1A", "\u821E\u53F0", "\u706F\u724C", "\u753B\u5C55", "\u97F3\u4E50\u8282", "\u5267\u573A"] },
   { type: "\u6587\u5B57\u7968\u636E\u73B0\u573A", keywords: ["\u622A\u56FE", "\u5C4F\u5E55", "\u7968\u636E", "\u5C0F\u7968", "\u83DC\u5355", "\u6D77\u62A5", "PPT", "\u6587\u6863", "\u4E8C\u7EF4\u7801", "\u6587\u5B57"] },
-  { type: "\u60C5\u4FA3\u7EA6\u4F1A\u73B0\u573A", keywords: ["\u60C5\u4FA3", "\u7EA6\u4F1A", "\u6D6A\u6F2B", "\u7275\u624B", "\u62E5\u62B1", "\u73AB\u7470", "\u4EB2\u5BC6"] }
+  { type: "\u60C5\u4FA3\u7EA6\u4F1A\u73B0\u573A", keywords: ["\u60C5\u4FA3", "\u7EA6\u4F1A", "\u6D6A\u6F2B", "\u7275\u624B", "\u62E5\u62B1", "\u73AB\u7470", "\u4EB2\u5BC6"] },
+  { type: "\u5BB6\u5EAD\u805A\u4F1A\u73B0\u573A", keywords: ["\u5BB6\u5EAD", "\u5BB6\u4EBA", "\u7236\u6BCD", "\u957F\u8F88", "\u5B69\u5B50", "\u513F\u7AE5", "\u4EB2\u5B50", "\u5168\u5BB6\u798F"] },
+  { type: "\u751F\u65E5\u5E86\u795D\u73B0\u573A", keywords: ["\u751F\u65E5", "\u751F\u65E5\u86CB\u7CD5", "\u8721\u70DB", "\u5E86\u751F", "\u793C\u7269", "\u8BB8\u613F", "\u751F\u65E5\u6D3E\u5BF9"] },
+  { type: "\u5A5A\u793C\u5E86\u5178\u73B0\u573A", keywords: ["\u5A5A\u793C", "\u65B0\u5A18", "\u65B0\u90CE", "\u5A5A\u7EB1", "\u793C\u670D", "\u6367\u82B1", "\u5A5A\u5BB4", "\u4EEA\u5F0F"] },
+  { type: "\u53A8\u623F\u6599\u7406\u73B0\u573A", keywords: ["\u53A8\u623F", "\u7076\u53F0", "\u9505", "\u6599\u7406", "\u70F9\u996A", "\u5207\u83DC", "\u505A\u996D", "\u83DC\u677F"] },
+  { type: "\u6559\u5BA4\u5B66\u4E60\u73B0\u573A", keywords: ["\u6559\u5BA4", "\u9ED1\u677F", "\u8BFE\u684C", "\u8BB2\u53F0", "\u8BFE\u5802", "\u8001\u5E08", "\u5B66\u751F", "\u4E0A\u8BFE"] },
+  { type: "\u56FE\u4E66\u9986\u81EA\u4E60\u73B0\u573A", keywords: ["\u56FE\u4E66\u9986", "\u4E66\u67B6", "\u81EA\u4E60\u5BA4", "\u9605\u8BFB", "\u590D\u4E60", "\u5B89\u9759\u5B66\u4E60"] },
+  { type: "\u5BBF\u820D\u751F\u6D3B\u73B0\u573A", keywords: ["\u5BBF\u820D", "\u5BDD\u5BA4", "\u4E0A\u4E0B\u94FA", "\u820D\u53CB", "\u5E8A\u94FA", "\u5BBF\u7BA1"] },
+  { type: "\u8F66\u5185\u79FB\u52A8\u73B0\u573A", keywords: ["\u8F66\u5185", "\u6C7D\u8F66", "\u9A7E\u9A76\u5EA7", "\u526F\u9A7E\u9A76", "\u65B9\u5411\u76D8", "\u540E\u5EA7", "\u8F66\u7A97"] },
+  { type: "\u5730\u94C1\u516C\u4EA4\u73B0\u573A", keywords: ["\u5730\u94C1", "\u516C\u4EA4", "\u8F66\u53A2", "\u7AD9\u53F0", "\u6276\u624B", "\u6362\u4E58", "\u8F68\u9053"] },
+  { type: "\u673A\u573A\u5019\u673A\u73B0\u573A", keywords: ["\u673A\u573A", "\u5019\u673A", "\u767B\u673A\u53E3", "\u884C\u674E\u7BB1", "\u822A\u73ED", "\u767B\u673A\u724C"] },
+  { type: "\u6D77\u8FB9\u5EA6\u5047\u73B0\u573A", keywords: ["\u6D77\u8FB9", "\u6C99\u6EE9", "\u6D77\u6D6A", "\u6D77\u6C34", "\u7901\u77F3", "\u6CF3\u88C5", "\u65E5\u843D"] },
+  { type: "\u5C71\u91CE\u5F92\u6B65\u73B0\u573A", keywords: ["\u5F92\u6B65", "\u722C\u5C71", "\u5C71\u8DEF", "\u5C71\u9876", "\u6811\u6797", "\u9732\u8425", "\u5E10\u7BF7", "\u6237\u5916"] },
+  { type: "\u516C\u56ED\u6563\u6B65\u73B0\u573A", keywords: ["\u516C\u56ED", "\u8349\u576A", "\u82B1\u56ED", "\u6E56\u8FB9", "\u957F\u6905", "\u6563\u6B65", "\u905B\u72D7"] },
+  { type: "\u9152\u5427\u591C\u751F\u6D3B\u73B0\u573A", keywords: ["\u9152\u5427", "\u9E21\u5C3E\u9152", "\u5564\u9152", "\u5427\u53F0", "\u591C\u5E97", "\u9713\u8679", "\u591C\u751F\u6D3B"] },
+  { type: "\u6F14\u5531\u4F1A\u5267\u573A\u73B0\u573A", keywords: ["\u6F14\u5531\u4F1A", "\u5267\u573A", "\u89C2\u4F17\u5E2D", "\u821E\u53F0", "\u8367\u5149\u68D2", "\u4E50\u961F", "\u8868\u6F14"] },
+  { type: "\u540E\u53F0\u51C6\u5907\u73B0\u573A", keywords: ["\u540E\u53F0", "\u5316\u5986\u95F4", "\u5019\u573A", "\u5F69\u6392", "\u9053\u5177\u95F4", "\u66F4\u8863\u5BA4"] },
+  { type: "\u533B\u9662\u8BCA\u6240\u73B0\u573A", keywords: ["\u533B\u9662", "\u8BCA\u6240", "\u75C5\u623F", "\u5019\u8BCA", "\u836F\u623F", "\u68C0\u67E5\u5BA4", "\u767D\u5927\u8902"] },
+  { type: "\u5DE5\u4F5C\u5BA4\u521B\u4F5C\u73B0\u573A", keywords: ["\u5DE5\u4F5C\u5BA4", "\u753B\u5BA4", "\u8BBE\u8BA1\u7A3F", "\u5668\u6750", "\u6444\u5F71\u68DA", "\u5546\u62CD", "\u521B\u4F5C"] },
+  { type: "\u5546\u54C1\u9759\u7269\u73B0\u573A", keywords: ["\u9759\u7269", "\u4EA7\u54C1\u56FE", "\u5546\u54C1\u5C55\u793A", "\u6446\u4EF6", "\u624B\u4F5C", "\u5305\u88C5\u76D2", "\u9648\u5217"] },
+  { type: "\u96E8\u5929\u8BB0\u5F55\u73B0\u573A", keywords: ["\u96E8\u5929", "\u4E0B\u96E8", "\u96E8\u4F1E", "\u79EF\u6C34", "\u96E8\u6EF4", "\u6E7F\u6F09\u6F09"] },
+  { type: "\u591C\u666F\u706F\u5149\u73B0\u573A", keywords: ["\u591C\u666F", "\u706F\u5149", "\u9713\u8679\u706F", "\u8DEF\u706F", "\u591C\u665A", "\u57CE\u5E02\u706F\u5149"] }
 ];
 var subjectKeywords = [
   "\u670B\u53CB",
@@ -104,7 +125,34 @@ var subjectKeywords = [
   "\u6587\u5B57",
   "\u8F66\u7AD9",
   "\u8857\u9053",
-  "\u706F\u5149"
+  "\u706F\u5149",
+  "\u5BB6\u4EBA",
+  "\u7236\u6BCD",
+  "\u957F\u8F88",
+  "\u5B69\u5B50",
+  "\u513F\u7AE5",
+  "\u60C5\u4FA3",
+  "\u540C\u4E8B",
+  "\u540C\u5B66",
+  "\u8001\u5E08",
+  "\u5B66\u751F",
+  "\u996E\u54C1",
+  "\u5976\u8336",
+  "\u5496\u5561",
+  "\u751C\u70B9",
+  "\u690D\u7269",
+  "\u82B1\u675F",
+  "\u8F66\u8F86",
+  "\u6C7D\u8F66",
+  "\u884C\u674E\u7BB1",
+  "\u670D\u88C5",
+  "\u914D\u9970",
+  "\u624B\u5DE5\u4F5C\u54C1",
+  "\u7968\u636E",
+  "\u6587\u6863",
+  "\u821E\u53F0",
+  "\u4E50\u961F",
+  "\u96E8\u4F1E"
 ];
 var flawRules = [
   { flaw: "\u6709\u4EBA\u88AB\u88C1\u51FA\u753B\u9762", keywords: ["\u88C1\u6389", "\u534A\u5F20\u8138", "\u5207\u6389", "\u6CA1\u4E86", "\u88AB\u753B\u9762\u5F00\u9664"] },
@@ -216,6 +264,12 @@ function detectPunchline(text) {
 }
 function detectMood(text, cuteness, awkward, chaos) {
   if (cuteness >= 75) return "\u53EF\u7231";
+  if (includesAny(text, ["\u6CBB\u6108", "\u6E29\u67D4", "\u8212\u670D", "\u5B89\u9759", "\u67D4\u548C"])) return "\u6CBB\u6108";
+  if (includesAny(text, ["\u70ED\u95F9", "\u5E86\u795D", "\u751F\u65E5", "\u5A5A\u793C", "\u6B22\u547C"])) return "\u70ED\u95F9";
+  if (includesAny(text, ["\u75B2\u60EB", "\u56F0", "\u7D2F", "\u4E0B\u73ED", "\u5026"])) return "\u75B2\u60EB";
+  if (includesAny(text, ["\u7D27\u5F20", "\u4E25\u8083", "\u6B63\u5F0F", "\u4F1A\u8BAE", "\u5019\u573A"])) return "\u7D27\u5F20";
+  if (includesAny(text, ["\u5B64\u72EC", "\u7A7A\u65F7", "\u4E00\u4E2A\u4EBA", "\u72EC\u81EA"])) return "\u5B64\u72EC";
+  if (includesAny(text, ["\u677E\u5F1B", "\u653E\u677E", "\u60A0\u95F2", "\u6563\u6B65", "\u5EA6\u5047"])) return "\u677E\u5F1B";
   if (includesAny(text, ["\u6D6A\u6F2B", "\u751C", "\u60C5\u4FA3"])) return "\u6D6A\u6F2B";
   if (awkward >= 75) return "\u5C34\u5C2C";
   if (chaos >= 70) return "\u5931\u63A7";
@@ -1237,7 +1291,12 @@ function generateReceiptContent(analysis, roastLevel2 = "normal", skill, generat
       { label: "\u753B\u9762\u79E9\u5E8F", value: 100 - Math.min(80, analysis.photoQualityIssues.length * 22 + analysis.chaosLevel / 3) },
       { label: "\u5206\u4EAB\u4EF7\u503C", value: Math.max(30, 82 - analysis.photoQualityIssues.length * 13 + analysis.cutenessLevel / 5) },
       { label: "\u5149\u7EBF\u53CB\u597D", value: Math.max(24, 88 - (analysis.photoQualityIssues.some((issue) => issue.includes("\u5149\u7EBF") || issue.includes("\u6697")) ? 42 : 8)) },
-      { label: "\u4E3B\u4F53\u7A33\u5B9A", value: Math.max(22, 86 - analysis.flaws.length * 9 - analysis.chaosLevel / 4) }
+      { label: "\u4E3B\u4F53\u7A33\u5B9A", value: Math.max(22, 86 - analysis.flaws.length * 9 - analysis.chaosLevel / 4) },
+      { label: "\u80CC\u666F\u514B\u5236", value: Math.max(18, 92 - analysis.chaosLevel - analysis.flaws.length * 5) },
+      { label: "\u60C5\u7EEA\u611F\u67D3", value: Math.max(32, Math.min(96, 48 + analysis.cutenessLevel / 3 + analysis.awkwardLevel / 4)) },
+      { label: "\u65F6\u673A\u51C6\u786E", value: Math.max(24, 84 - analysis.awkwardLevel / 2 - analysis.photoQualityIssues.length * 7) },
+      { label: "\u7A7A\u95F4\u5C42\u6B21", value: Math.max(28, 88 - analysis.chaosLevel / 2 - analysis.photoQualityIssues.length * 6) },
+      { label: "\u6551\u7247\u96BE\u5EA6", value: Math.min(96, 24 + analysis.photoQualityIssues.length * 13 + analysis.chaosLevel / 3) }
     ],
     roast: generatedComment?.trim() || receiptRoast(analysis, roastLevel2),
     advice: adviceFor(analysis),
@@ -1747,7 +1806,8 @@ function updateReceiptPreview(container, rawData, rawMode, roastLevel2, options 
 }
 function renderSimple(data, level) {
   const tags = shortWords(data);
-  const chargeRows = [...data.findings, `${data.photoType}\u52AA\u529B\u8425\u4E1A`, `${data.atmosphere}\u73B0\u573A\u52A0\u6210`].slice(0, level === "gentle" ? 4 : level === "normal" ? 5 : 7);
+  const scoreCharges = normalizeScores(data.scores).map((score) => `${score.label}${score.value < 58 ? "\u5F85\u62A2\u6551" : score.value > 78 ? "\u8868\u73B0\u826F\u597D" : "\u4ECD\u6709\u4F59\u5730"}`);
+  const chargeRows = [...data.findings, ...scoreCharges, `${data.photoType}\u52AA\u529B\u8425\u4E1A`, `${data.atmosphere}\u73B0\u573A\u52A0\u6210`].filter((item, index, all) => all.indexOf(item) === index).slice(0, level === "gentle" ? 6 : level === "normal" ? 7 : 9);
   return [
     header("PHOTO RECEIPT", "\u7167\u7247\u8BCA\u65AD\u6536\u636E"),
     level !== "gentle" ? `<div class="receipt-alert">${level === "normal" ? "[WARN] \u8F7B\u5EA6\u62A2\u620F\u8B66\u544A" : "[OUCH] \u753B\u9762\u79E9\u5E8F\u9700\u8981\u62A2\u6551"}</div>` : "",
@@ -1822,7 +1882,7 @@ function header(mode2, chinese) {
 }
 function footer(tags, verdict) {
   return `<footer class="receipt-footer">
-    <p><b>\u4ECA\u65E5\u6807\u7B7E\uFF1A</b>${tags.slice(0, 4).map((tag) => `#${escape(tag.replace(/^#+/, ""))}`).join(" ")}</p>
+    <p class="receipt-footer__tags"><b>\u4ECA\u65E5\u6807\u7B7E\uFF1A</b><span>${tags.slice(0, 4).map((tag) => `#${escape(tag.replace(/^#+/, ""))}`).join(" ")}</span></p>
     <p><b>\u672C\u6B21\u7ED3\u8BBA\uFF1A</b>${escape(verdict)}</p>
     <div>-- \u62CD\u7ACB\u603C \u5DF2\u51FA\u5355 --</div>
   </footer>`;
@@ -1845,7 +1905,7 @@ function metricRows(scores) {
   }).join("");
 }
 function radar(scores) {
-  const items = normalizeScores(scores);
+  const items = normalizeScores(scores).slice(0, 6);
   const center = 54;
   const radius = 40;
   const points = items.map((score, index) => {
@@ -1866,9 +1926,21 @@ function compositionMap(level) {
   const cells = Array.from({ length: 9 }, (_, index) => {
     const isCenter = index === 4;
     const warning = level === "execution" ? !isCenter : level === "spicy" ? [1, 5, 6].includes(index) : index === 5;
-    return `<span>${isCenter ? "\u25CF" : warning ? "!" : ""}</span>`;
+    return `<span class="${warning ? "composition-map__warning" : ""}">${isCenter ? "\u25CF" : warning ? "!" : ""}</span>`;
   }).join("");
-  return `<div class="composition-map">${cells}</div><p class="receipt-caption">\u25CF \u4E3B\u4F53\u4F4D\u7F6E &nbsp; ! \u5E72\u6270\u533A\u57DF</p>`;
+  return `<div class="composition-report">
+    <div class="composition-map">
+      ${cells}
+      <i class="composition-map__focus"></i>
+      <i class="composition-map__axis composition-map__axis--x"></i>
+      <i class="composition-map__axis composition-map__axis--y"></i>
+    </div>
+    <dl>
+      <div><dt>FRAME</dt><dd>\u4E3B\u4F53\u4F4D\u4E8E\u4E2D\u5FC3\u89C2\u5BDF\u533A</dd></div>
+      <div><dt>NOISE</dt><dd>${level === "gentle" ? "\u5C11\u91CF\u8FB9\u7F18\u5E72\u6270" : level === "normal" ? "\u53F3\u4FA7\u5B58\u5728\u62A2\u955C\u5143\u7D20" : "\u80CC\u666F\u5E72\u6270\u533A\u6B63\u5728\u6269\u5F20"}</dd></div>
+      <div><dt>GUIDE</dt><dd>${level === "execution" ? "\u5EFA\u8BAE\u91CD\u62CD\u5E76\u6E05\u7A7A\u80CC\u666F" : "\u5EFA\u8BAE\u9760\u8FD1\u4E3B\u4F53\u91CD\u65B0\u88C1\u5207"}</dd></div>
+    </dl>
+  </div><p class="receipt-caption">\u25CF \u4E3B\u4F53\u89C2\u5BDF\u533A &nbsp; ! \u5E72\u6270\u533A\u57DF &nbsp; + \u6784\u56FE\u8F74\u7EBF</p>`;
 }
 function noise(tags, level) {
   if (level === "gentle" || level === "normal") return "";
@@ -1886,9 +1958,12 @@ function normalizeScores(scores) {
     { label: "\u5149\u7EBF\u53CB\u597D", value: 58 },
     { label: "\u6784\u56FE\u7A33\u5B9A", value: 62 },
     { label: "\u80CC\u666F\u5E72\u6270", value: 76 },
-    { label: "\u60C5\u7EEA\u611F\u67D3", value: 68 }
+    { label: "\u60C5\u7EEA\u611F\u67D3", value: 68 },
+    { label: "\u7A7A\u95F4\u5C42\u6B21", value: 64 },
+    { label: "\u65F6\u673A\u51C6\u786E", value: 61 },
+    { label: "\u6551\u7247\u96BE\u5EA6", value: 52 }
   ];
-  return [...scores, ...fallback].filter((score) => Number.isFinite(score.value)).slice(0, 5).map((score) => ({ ...score, value: Math.max(0, Math.min(100, score.value)) }));
+  return [...scores, ...fallback].filter((score) => Number.isFinite(score.value)).slice(0, 8).map((score) => ({ ...score, value: Math.max(0, Math.min(100, score.value)) }));
 }
 function normalizeData(raw) {
   const data = raw && typeof raw === "object" ? raw : {};

@@ -58,7 +58,10 @@ export function updateReceiptPreview(
 
 function renderSimple(data: ReceiptData, level: string) {
   const tags = shortWords(data);
-  const chargeRows = [...data.findings, `${data.photoType}努力营业`, `${data.atmosphere}现场加成`].slice(0, level === "gentle" ? 4 : level === "normal" ? 5 : 7);
+  const scoreCharges = normalizeScores(data.scores).map((score) => `${score.label}${score.value < 58 ? "待抢救" : score.value > 78 ? "表现良好" : "仍有余地"}`);
+  const chargeRows = [...data.findings, ...scoreCharges, `${data.photoType}努力营业`, `${data.atmosphere}现场加成`]
+    .filter((item, index, all) => all.indexOf(item) === index)
+    .slice(0, level === "gentle" ? 6 : level === "normal" ? 7 : 9);
   return [
     header("PHOTO RECEIPT", "照片诊断收据"),
     level !== "gentle" ? `<div class="receipt-alert">${level === "normal" ? "[WARN] 轻度抢戏警告" : "[OUCH] 画面秩序需要抢救"}</div>` : "",
@@ -137,7 +140,7 @@ function header(mode: string, chinese: string) {
 
 function footer(tags: string[], verdict: string) {
   return `<footer class="receipt-footer">
-    <p><b>今日标签：</b>${tags.slice(0, 4).map((tag) => `#${escape(tag.replace(/^#+/, ""))}`).join(" ")}</p>
+    <p class="receipt-footer__tags"><b>今日标签：</b><span>${tags.slice(0, 4).map((tag) => `#${escape(tag.replace(/^#+/, ""))}`).join(" ")}</span></p>
     <p><b>本次结论：</b>${escape(verdict)}</p>
     <div>-- 拍立怼 已出单 --</div>
   </footer>`;
@@ -165,7 +168,7 @@ function metricRows(scores: Array<{ label: string; value: number }>) {
 }
 
 function radar(scores: Array<{ label: string; value: number }>) {
-  const items = normalizeScores(scores);
+  const items = normalizeScores(scores).slice(0, 6);
   const center = 54;
   const radius = 40;
   const points = items.map((score, index) => {
@@ -187,9 +190,21 @@ function compositionMap(level: string) {
   const cells = Array.from({ length: 9 }, (_, index) => {
     const isCenter = index === 4;
     const warning = level === "execution" ? !isCenter : level === "spicy" ? [1, 5, 6].includes(index) : index === 5;
-    return `<span>${isCenter ? "●" : warning ? "!" : ""}</span>`;
+    return `<span class="${warning ? "composition-map__warning" : ""}">${isCenter ? "●" : warning ? "!" : ""}</span>`;
   }).join("");
-  return `<div class="composition-map">${cells}</div><p class="receipt-caption">● 主体位置 &nbsp; ! 干扰区域</p>`;
+  return `<div class="composition-report">
+    <div class="composition-map">
+      ${cells}
+      <i class="composition-map__focus"></i>
+      <i class="composition-map__axis composition-map__axis--x"></i>
+      <i class="composition-map__axis composition-map__axis--y"></i>
+    </div>
+    <dl>
+      <div><dt>FRAME</dt><dd>主体位于中心观察区</dd></div>
+      <div><dt>NOISE</dt><dd>${level === "gentle" ? "少量边缘干扰" : level === "normal" ? "右侧存在抢镜元素" : "背景干扰区正在扩张"}</dd></div>
+      <div><dt>GUIDE</dt><dd>${level === "execution" ? "建议重拍并清空背景" : "建议靠近主体重新裁切"}</dd></div>
+    </dl>
+  </div><p class="receipt-caption">● 主体观察区 &nbsp; ! 干扰区域 &nbsp; + 构图轴线</p>`;
 }
 
 function noise(tags: string[], level: string) {
@@ -210,9 +225,12 @@ function normalizeScores(scores: Array<{ label: string; value: number }>) {
     { label: "光线友好", value: 58 },
     { label: "构图稳定", value: 62 },
     { label: "背景干扰", value: 76 },
-    { label: "情绪感染", value: 68 }
+    { label: "情绪感染", value: 68 },
+    { label: "空间层次", value: 64 },
+    { label: "时机准确", value: 61 },
+    { label: "救片难度", value: 52 }
   ];
-  return [...scores, ...fallback].filter((score) => Number.isFinite(score.value)).slice(0, 5).map((score) => ({ ...score, value: Math.max(0, Math.min(100, score.value)) }));
+  return [...scores, ...fallback].filter((score) => Number.isFinite(score.value)).slice(0, 8).map((score) => ({ ...score, value: Math.max(0, Math.min(100, score.value)) }));
 }
 
 function normalizeData(raw: unknown): ReceiptData {
