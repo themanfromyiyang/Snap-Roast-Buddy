@@ -335,7 +335,7 @@ static int  printSessionExpectedSeq = 0;
 static int  printSessionTotalChunks = 0;
 static uint32_t printSessionLastMillis = 0;
 static uint32_t printSessionBytesOut = 0;
-static const uint32_t PRINT_SESSION_TIMEOUT_MS = 120000;
+static const uint32_t PRINT_SESSION_TIMEOUT_MS = 30000;
 
 // 检查 DTR 是否 READY，否则忙等到 READY 或超时降级。
 // 超时降级：避免 DTR 接错/极性反时整个 HTTP handler 卡死。
@@ -347,7 +347,7 @@ static inline void waitPrinterReady() {
       dtrTimeoutCount++;
       return;
     }
-    delay(1);
+    delayMicroseconds(50);
   }
 }
 
@@ -487,7 +487,6 @@ static size_t streamBase64ToPrinter(const String& b64) {
       waitPrinterReady();
       Printer.write(byte);
       outBytes++;
-      if ((outBytes & 0x3F) == 0) delay(1);
     }
   }
   return outBytes;
@@ -518,8 +517,7 @@ static void handlePrintBridge() {
   // ESP32 WebServer 单次 POST body 在 60KB+ 不可靠（readBytes 1s 超时 + 内部
   // String 反复 realloc 撞 heap 碎片）。改成分块串行上传：每块 3000 字符（4 的
   // 倍数 → base64 6-bit 单元不会被切断），每块 ~4.5KB urlencoded，远低于库限制。
-  html += "const CHUNK=600;";
-  html += "const PAUSE_MS=80;";
+  html += "const CHUNK=3000;";
   html += "const total=Math.ceil(b64.length/CHUNK);";
   html += "s.textContent='hash='+raw.length+' b64='+b64.length+' 分'+total+'块发送…';";
   html += "for(let i=0;i<total;i++){";
@@ -532,7 +530,6 @@ static void handlePrintBridge() {
   html += "if(!r.ok){s.innerHTML='块 '+i+'/'+total+' 失败 HTTP '+r.status+': '+t.replace(/<[^>]+>/g,'').slice(0,300);s.classList.add('err');return;}";
   // 最后一块返回完整 HTML，覆盖整页
   html += "if(i===total-1){document.open();document.write(t);document.close();return;}";
-  html += "await new Promise(r=>setTimeout(r,PAUSE_MS));";
   html += "}catch(e){s.innerHTML='块 '+i+'/'+total+' 出错: '+e.message;s.classList.add('err');return;}";
   html += "}";
   html += "})();";
