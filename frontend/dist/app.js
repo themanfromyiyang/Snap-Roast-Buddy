@@ -2043,6 +2043,7 @@ function escape(value) {
 var SERVICE_UUID = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E".toLowerCase();
 var RX_CHAR_UUID = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E".toLowerCase();
 var PRINT_WIDTH_DOTS = 384;
+var RASTER_BAND_HEIGHT_DOTS = 64;
 var BLANK_IMAGE_DATA_URL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 function canvasToEscPosRaster(canvas, threshold = 128) {
   const scale = PRINT_WIDTH_DOTS / canvas.width;
@@ -2088,8 +2089,23 @@ function canvasToEscPosRaster(canvas, threshold = 128) {
       }
     }
   }
-  const header2 = new Uint8Array([29, 118, 48, 0, xBytes & 255, xBytes >> 8 & 255, height & 255, height >> 8 & 255]);
-  return concatBytes(header2, bitmap);
+  const bands = [];
+  for (let top = 0; top < height; top += RASTER_BAND_HEIGHT_DOTS) {
+    const bandHeight = Math.min(RASTER_BAND_HEIGHT_DOTS, height - top);
+    const bandBytes = xBytes * bandHeight;
+    const header2 = new Uint8Array([
+      29,
+      118,
+      48,
+      0,
+      xBytes & 255,
+      xBytes >> 8 & 255,
+      bandHeight & 255,
+      bandHeight >> 8 & 255
+    ]);
+    bands.push(header2, bitmap.slice(top * xBytes, top * xBytes + bandBytes));
+  }
+  return concatBytes(...bands);
 }
 function concatBytes(...arrays) {
   const total = arrays.reduce((sum, array) => sum + array.length, 0);

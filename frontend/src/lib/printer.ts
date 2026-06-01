@@ -4,6 +4,7 @@ const RX_CHAR_UUID = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E".toLowerCase();
 const CHUNK_SIZE = 100;
 const CHUNK_DELAY_MS = 30;
 const PRINT_WIDTH_DOTS = 384;
+const RASTER_BAND_HEIGHT_DOTS = 64;
 const FEED_LINES_AFTER_RASTER = 4;
 const BLANK_IMAGE_DATA_URL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 
@@ -159,8 +160,23 @@ export function canvasToEscPosRaster(canvas: HTMLCanvasElement, threshold = 128)
     }
   }
 
-  const header = new Uint8Array([0x1d, 0x76, 0x30, 0x00, xBytes & 0xff, (xBytes >> 8) & 0xff, height & 0xff, (height >> 8) & 0xff]);
-  return concatBytes(header, bitmap);
+  const bands: Uint8Array[] = [];
+  for (let top = 0; top < height; top += RASTER_BAND_HEIGHT_DOTS) {
+    const bandHeight = Math.min(RASTER_BAND_HEIGHT_DOTS, height - top);
+    const bandBytes = xBytes * bandHeight;
+    const header = new Uint8Array([
+      0x1d,
+      0x76,
+      0x30,
+      0x00,
+      xBytes & 0xff,
+      (xBytes >> 8) & 0xff,
+      bandHeight & 0xff,
+      (bandHeight >> 8) & 0xff
+    ]);
+    bands.push(header, bitmap.slice(top * xBytes, top * xBytes + bandBytes));
+  }
+  return concatBytes(...bands);
 }
 
 export function concatBytes(...arrays: Uint8Array[]) {

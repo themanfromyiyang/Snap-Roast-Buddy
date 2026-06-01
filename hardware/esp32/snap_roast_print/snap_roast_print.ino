@@ -54,7 +54,7 @@ static uint32_t staLastReconnectTryMs = 0;
 static wl_status_t staLastStatus = WL_IDLE_STATUS;
 static const char* AP_SSID = "SnapRoast-Setup";
 
-// 打印机 DTR 已接 ESP32 GPIO 41（硬件流控）。
+// 打印机 DTR 已接 ESP32 GPIO41（硬件流控）。
 // 常见 ESC/POS 约定 LOW = READY，HIGH = BUSY；如果实测一直卡 BUSY，再把 DTR_BUSY_LEVEL 改成 LOW。
 #define PRINTER_RX_PIN       1
 #define PRINTER_TX_PIN       2
@@ -307,6 +307,8 @@ static void enterStaMode() {
   server.on("/print-chunk",  HTTP_POST,    handlePrintChunk);
   server.on("/print-chunk",  HTTP_OPTIONS, handleOptions);
   server.on("/print-bridge", HTTP_GET,     handlePrintBridge);
+  server.on("/printer-self-test", HTTP_GET, handlePrinterSelfTest);
+  server.on("/printer-dtr", HTTP_GET, handlePrinterDtr);
   server.onNotFound([]() {
     sendCors();
     server.send(404, "text/plain", "Not found");
@@ -396,6 +398,7 @@ static void printerFinish() {
   delay(80);
   printerWrite(0x1B);
   printerWrite(0x6D);
+  Printer.flush();
 }
 
 static void sendCors() {
@@ -424,6 +427,49 @@ static void handleRoot() {
 static void handlePing() {
   sendCors();
   server.send(200, "text/plain", "pong");
+}
+
+static void handlePrinterDtr() {
+  sendCors();
+  int level = digitalRead(DTR_PIN);
+  String body = "{";
+  body += "\"dtrPin\":";
+  body += String(DTR_PIN);
+  body += ",\"rawLevel\":\"";
+  body += level == HIGH ? "HIGH" : "LOW";
+  body += "\",\"interpreted\":\"";
+  body += level == DTR_BUSY_LEVEL ? "BUSY" : "READY";
+  body += "\",\"busyLevel\":\"";
+  body += DTR_BUSY_LEVEL == HIGH ? "HIGH" : "LOW";
+  body += "\",\"baud\":";
+  body += String(PRINTER_BAUD);
+  body += ",\"rxPin\":";
+  body += String(PRINTER_RX_PIN);
+  body += ",\"txPin\":";
+  body += String(PRINTER_TX_PIN);
+  body += "}";
+  server.send(200, "application/json", body);
+}
+
+static void handlePrinterSelfTest() {
+  sendCors();
+  Serial.println("==== printer self-test: ESC @ + DC2 T ====");
+  Serial.print("UART baud="); Serial.print(PRINTER_BAUD);
+  Serial.print(" RX="); Serial.print(PRINTER_RX_PIN);
+  Serial.print(" TX="); Serial.print(PRINTER_TX_PIN);
+  Serial.print(" DTR="); Serial.print(DTR_PIN);
+  Serial.print(" level=");
+  Serial.println(digitalRead(DTR_PIN) == HIGH ? "HIGH" : "LOW");
+
+  printerInit();
+  printerWrite(0x12);
+  printerWrite(0x54);
+  Printer.flush();
+
+  server.send(200, "text/html; charset=utf-8",
+              "<!doctype html><meta charset=utf-8><h1>已发送打印机自测命令</h1>"
+              "<p>如果打印机无反应，请检查 TX/RX、波特率、电平接口和供电。</p>"
+              "<p><a href=\"/printer-dtr\">查看 DTR 状态</a></p>");
 }
 
 static String htmlEscape(const String& s) {
