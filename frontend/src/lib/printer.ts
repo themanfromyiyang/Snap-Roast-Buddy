@@ -189,6 +189,7 @@ export async function elementToCanvas(element: HTMLElement) {
   clone.style.width = `${width}px`;
   clone.style.minHeight = `${height}px`;
   clone.style.margin = "0";
+  await inlineEmbeddedImages(clone);
 
   const wrapper = document.createElement("div");
   wrapper.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
@@ -210,6 +211,50 @@ export async function elementToCanvas(element: HTMLElement) {
   context.scale(2, 2);
   context.drawImage(image, 0, 0);
   return canvas;
+}
+
+async function inlineEmbeddedImages(root: HTMLElement) {
+  const htmlImages = Array.from(root.querySelectorAll<HTMLImageElement>("img"));
+  const svgImages = Array.from(root.querySelectorAll<SVGElement>("image"));
+
+  await Promise.all([
+    ...htmlImages.map(async (image) => {
+      const src = image.getAttribute("src") || image.src;
+      const dataUrl = await toInlineImageUrl(src);
+      if (!dataUrl) return;
+      image.setAttribute("src", dataUrl);
+      image.removeAttribute("srcset");
+    }),
+    ...svgImages.map(async (image) => {
+      const href = image.getAttribute("href") || image.getAttributeNS("http://www.w3.org/1999/xlink", "href") || "";
+      const dataUrl = await toInlineImageUrl(href);
+      if (!dataUrl) return;
+      image.setAttribute("href", dataUrl);
+      image.setAttributeNS("http://www.w3.org/1999/xlink", "href", dataUrl);
+    })
+  ]);
+}
+
+async function toInlineImageUrl(src: string) {
+  if (!src) return "";
+  if (src.startsWith("data:")) return src;
+  try {
+    const absoluteUrl = new URL(src, document.baseURI).href;
+    const response = await fetch(absoluteUrl, { mode: "cors", credentials: "omit" });
+    if (!response.ok) return "";
+    return await blobToDataUrl(await response.blob());
+  } catch {
+    return "";
+  }
+}
+
+function blobToDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(String(reader.result || "")));
+    reader.addEventListener("error", () => reject(reader.error ?? new Error("Failed to inline image.")));
+    reader.readAsDataURL(blob);
+  });
 }
 
 function collectPageStyles() {
