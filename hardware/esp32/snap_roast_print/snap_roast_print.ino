@@ -172,6 +172,54 @@ static void handleScan() {
   server.send(200, "application/json", resp);
 }
 
+// 解析 POST body JSON {"ssid":"...","pass":"..."}，写 NVS 后 1.5s 重启。
+// 手写极小 JSON 解析：只处理两个 string 字段，不依赖 ArduinoJson 库。
+static String jsonExtractString(const String& body, const char* key) {
+  String needle = String("\"") + key + "\"";
+  int kp = body.indexOf(needle);
+  if (kp < 0) return "";
+  int colon = body.indexOf(':', kp + needle.length());
+  if (colon < 0) return "";
+  int q1 = body.indexOf('"', colon + 1);
+  if (q1 < 0) return "";
+  String out;
+  out.reserve(64);
+  for (int i = q1 + 1; i < (int)body.length(); i++) {
+    char c = body[i];
+    if (c == '\\' && i + 1 < (int)body.length()) {
+      char n = body[++i];
+      if      (n == 'n')  out += '\n';
+      else if (n == 't')  out += '\t';
+      else if (n == 'r')  out += '\r';
+      else                out += n;     // \\ \" \/ 等都按字面下一字符处理
+    } else if (c == '"') {
+      return out;
+    } else {
+      out += c;
+    }
+  }
+  return "";  // 找不到收尾引号
+}
+
+static void handleSave() {
+  sendCors();
+  String body = server.arg("plain");
+  Serial.print("/save body 长度: ");
+  Serial.println(body.length());
+
+  String ssid = jsonExtractString(body, "ssid");
+  String pass = jsonExtractString(body, "pass");
+  if (ssid.length() == 0) {
+    server.send(400, "text/plain", "missing ssid");
+    return;
+  }
+  saveCreds(ssid, pass);
+  server.send(200, "text/plain", "ok");
+  Serial.println("1.5 秒后重启...");
+  delay(1500);
+  ESP.restart();
+}
+
 // catch-all：iOS/Android captive portal 探测域名都重定向到 /
 static void handleCaptiveRedirect() {
   server.sendHeader("Location", "http://192.168.4.1/", true);
@@ -194,6 +242,8 @@ static void enterApMode() {
   // 只注册配网相关路由；打印路由在 AP 模式下不可用
   server.on("/", HTTP_GET, handleConfigRoot);
   server.on("/scan", HTTP_GET, handleScan);
+  server.on("/save", HTTP_POST,    handleSave);
+  server.on("/save", HTTP_OPTIONS, handleOptions);
   server.onNotFound(handleCaptiveRedirect);
   server.begin();
   Serial.println("配网 HTTP server 已启动");
