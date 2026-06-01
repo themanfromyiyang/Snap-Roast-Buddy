@@ -2043,6 +2043,7 @@ function escape(value) {
 var SERVICE_UUID = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E".toLowerCase();
 var RX_CHAR_UUID = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E".toLowerCase();
 var PRINT_WIDTH_DOTS = 384;
+var BLANK_IMAGE_DATA_URL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 function canvasToEscPosRaster(canvas, threshold = 128) {
   const scale = PRINT_WIDTH_DOTS / canvas.width;
   const targetHeight = Math.max(1, Math.round(canvas.height * scale));
@@ -2149,16 +2150,14 @@ async function inlineEmbeddedImages(root) {
     ...htmlImages.map(async (image) => {
       const src = image.getAttribute("src") || image.src;
       const dataUrl = await toInlineImageUrl(src);
-      if (!dataUrl) return;
-      image.setAttribute("src", dataUrl);
+      image.setAttribute("src", dataUrl || BLANK_IMAGE_DATA_URL);
       image.removeAttribute("srcset");
     }),
     ...svgImages.map(async (image) => {
       const href = image.getAttribute("href") || image.getAttributeNS("http://www.w3.org/1999/xlink", "href") || "";
       const dataUrl = await toInlineImageUrl(href);
-      if (!dataUrl) return;
-      image.setAttribute("href", dataUrl);
-      image.setAttributeNS("http://www.w3.org/1999/xlink", "href", dataUrl);
+      image.setAttribute("href", dataUrl || BLANK_IMAGE_DATA_URL);
+      image.setAttributeNS("http://www.w3.org/1999/xlink", "href", dataUrl || BLANK_IMAGE_DATA_URL);
     })
   ]);
 }

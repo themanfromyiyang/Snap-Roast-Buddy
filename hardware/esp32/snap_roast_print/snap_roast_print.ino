@@ -16,7 +16,7 @@
 // 接线（同你之前的代码）：
 //   打印机 TX → ESP32 GPIO1 (RX)
 //   打印机 RX → ESP32 GPIO2 (TX)
-//   打印机 VH → 独立 5-9V 电源（不要从 ESP32 取电）
+//   打印机 VIN → 独立 12-24V 电源（MY-D245/MY-Q245 规格书要求，不要从 ESP32 取电）
 //   打印机 GND ↔ ESP32 GND 共地
 
 #include <WiFi.h>
@@ -54,10 +54,12 @@ static uint32_t staLastReconnectTryMs = 0;
 static wl_status_t staLastStatus = WL_IDLE_STATUS;
 static const char* AP_SSID = "SnapRoast-Setup";
 
-// 打印机 DTR 接 ESP32 GPIO 41（硬件流控）
-// MY-628 DTR：打印机输出，告诉主机自己是否能接收数据
-// 约定（最常见 ESC/POS）：LOW = READY（可接收），HIGH = BUSY（缓冲将满）
-// 若实测发现极性反了（一直卡在 BUSY 或所有字节都不等就发），把 DTR_BUSY_LEVEL 改成 LOW
+// 打印机 DTR 已接 ESP32 GPIO 41（硬件流控）。
+// 常见 ESC/POS 约定 LOW = READY，HIGH = BUSY；如果实测一直卡 BUSY，再把 DTR_BUSY_LEVEL 改成 LOW。
+#define PRINTER_RX_PIN       1
+#define PRINTER_TX_PIN       2
+#define PRINTER_BAUD         115200
+#define PRINTER_USE_DTR_FLOW_CONTROL 1
 #define DTR_PIN              41
 #define DTR_BUSY_LEVEL       HIGH
 #define DTR_WAIT_TIMEOUT_MS  500
@@ -361,6 +363,9 @@ static const uint32_t PRINT_SESSION_TIMEOUT_MS = 30000;
 // 检查 DTR 是否 READY，否则忙等到 READY 或超时降级。
 // 超时降级：避免 DTR 接错/极性反时整个 HTTP handler 卡死。
 static inline void waitPrinterReady() {
+#if !PRINTER_USE_DTR_FLOW_CONTROL
+  return;
+#endif
   if (digitalRead(DTR_PIN) != DTR_BUSY_LEVEL) return;
   uint32_t start = millis();
   while (digitalRead(DTR_PIN) == DTR_BUSY_LEVEL) {
@@ -370,6 +375,27 @@ static inline void waitPrinterReady() {
     }
     delayMicroseconds(50);
   }
+}
+
+static inline void printerWrite(uint8_t byte) {
+  waitPrinterReady();
+  Printer.write(byte);
+}
+
+static void printerInit() {
+  printerWrite(0x1B);
+  printerWrite(0x40);
+  delay(50);
+}
+
+static void printerFinish() {
+  // MY-D245/MY-Q245: ESC d n feeds n lines, ESC m performs a half cut.
+  printerWrite(0x1B);
+  printerWrite(0x64);
+  printerWrite(4);
+  delay(80);
+  printerWrite(0x1B);
+  printerWrite(0x6D);
 }
 
 static void sendCors() {
@@ -424,14 +450,10 @@ static void doPrint(const String& text, bool returnHtml) {
   Serial.println(text);
   Serial.println("=====================");
 
-  Printer.write(0x1B);  // ESC @ 初始化
-  Printer.write(0x40);
-  delay(50);
+  printerInit();
 
   Printer.println(text);
-  Printer.write('\n');
-  Printer.write('\n');
-  Printer.write('\n');
+  printerFinish();
 
   if (returnHtml) {
     String html;
@@ -505,8 +527,7 @@ static size_t streamBase64ToPrinter(const String& b64) {
     if (bits >= 8) {
       bits -= 8;
       uint8_t byte = (uint8_t)((buf >> bits) & 0xFF);
-      waitPrinterReady();
-      Printer.write(byte);
+      printerWrite(byte);
       outBytes++;
     }
   }
@@ -597,21 +618,21 @@ static void handlePrintRaster() {
   Serial.print("base64 长度: ");
   Serial.println(b64.length());
   Serial.print("DTR 初始状态: ");
+#if PRINTER_USE_DTR_FLOW_CONTROL
   Serial.println(digitalRead(DTR_PIN) == DTR_BUSY_LEVEL ? "BUSY" : "READY");
+#else
+  Serial.println("disabled");
+#endif
 
   dtrTimeoutCount = 0;
 
   // 初始化打印机（ESC @）
-  waitPrinterReady(); Printer.write(0x1B);
-  waitPrinterReady(); Printer.write(0x40);
-  delay(50);
+  printerInit();
 
   size_t printedBytes = streamBase64ToPrinter(b64);
 
   // 走纸
-  waitPrinterReady(); Printer.write('\n');
-  waitPrinterReady(); Printer.write('\n');
-  waitPrinterReady(); Printer.write('\n');
+  printerFinish();
 
   Serial.print("已发字节数: ");
   Serial.println(printedBytes);
@@ -667,9 +688,7 @@ static void handlePrintChunk() {
     Serial.print("==== 新位图打印会话, 总块: ");
     Serial.println(total);
     // ESC @ 初始化打印机
-    waitPrinterReady(); Printer.write(0x1B);
-    waitPrinterReady(); Printer.write(0x40);
-    delay(50);
+    printerInit();
     printSessionActive = true;
     printSessionExpectedSeq = 0;
     printSessionTotalChunks = total;
@@ -704,9 +723,7 @@ static void handlePrintChunk() {
 
   if (seq == total - 1) {
     // 最后一块：走纸结束
-    waitPrinterReady(); Printer.write('\n');
-    waitPrinterReady(); Printer.write('\n');
-    waitPrinterReady(); Printer.write('\n');
+    printerFinish();
     printSessionActive = false;
     Serial.print("==== 打印完成, 总字节: "); Serial.print(printSessionBytesOut);
     Serial.print(", DTR 超时: "); Serial.println(dtrTimeoutCount);
@@ -841,9 +858,11 @@ static void buttonPollStaMode() {
 
 void setup() {
   Serial.begin(115200);
+#if PRINTER_USE_DTR_FLOW_CONTROL
   pinMode(DTR_PIN, INPUT_PULLUP);
+#endif
   pinMode(BUTTON_PIN, INPUT);
-  Printer.begin(57600, SERIAL_8N1, 1, 2);  // RX=1, TX=2
+  Printer.begin(PRINTER_BAUD, SERIAL_8N1, PRINTER_RX_PIN, PRINTER_TX_PIN);
   delay(500);
 
   prefs.begin("wifi", /*readOnly=*/false);

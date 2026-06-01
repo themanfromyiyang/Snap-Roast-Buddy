@@ -4,6 +4,8 @@ const RX_CHAR_UUID = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E".toLowerCase();
 const CHUNK_SIZE = 100;
 const CHUNK_DELAY_MS = 30;
 const PRINT_WIDTH_DOTS = 384;
+const FEED_LINES_AFTER_RASTER = 4;
+const BLANK_IMAGE_DATA_URL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 
 type BluetoothRemoteGATTCharacteristicLike = {
   writeValue?: (value: BufferSource) => Promise<void>;
@@ -85,10 +87,8 @@ export async function feedLines(n = 4) {
 
 export async function printTestText() {
   const encoder = new TextEncoder();
-  const init = new Uint8Array([0x1b, 0x40]);
   const text = encoder.encode("Hello ESP32-S3!\nBluetooth print test.\nSnap Roast Buddy\n----------------\n");
-  const feed = new Uint8Array([0x1b, 0x64, 4]);
-  await sendBytes(concatBytes(init, text, feed));
+  await sendBytes(concatBytes(createPrinterInitBytes(), text, createPrinterFinishBytes()));
 }
 
 export async function printRasterFromElement(element: HTMLElement) {
@@ -97,10 +97,17 @@ export async function printRasterFromElement(element: HTMLElement) {
 
 export async function createRasterPrintBytesFromElement(element: HTMLElement) {
   const canvas = await elementToCanvas(element);
-  const init = new Uint8Array([0x1b, 0x40]);
   const raster = canvasToEscPosRaster(canvas);
-  const feed = new Uint8Array([0x1b, 0x64, 4]);
-  return concatBytes(init, raster, feed);
+  return concatBytes(createPrinterInitBytes(), raster, createPrinterFinishBytes());
+}
+
+export function createPrinterInitBytes() {
+  return new Uint8Array([0x1b, 0x40]);
+}
+
+export function createPrinterFinishBytes() {
+  // MY-D245/MY-Q245 supports ESC d n feed and ESC m half-cut.
+  return new Uint8Array([0x1b, 0x64, FEED_LINES_AFTER_RASTER, 0x1b, 0x6d]);
 }
 
 export function canvasToEscPosRaster(canvas: HTMLCanvasElement, threshold = 128) {
@@ -221,16 +228,14 @@ async function inlineEmbeddedImages(root: HTMLElement) {
     ...htmlImages.map(async (image) => {
       const src = image.getAttribute("src") || image.src;
       const dataUrl = await toInlineImageUrl(src);
-      if (!dataUrl) return;
-      image.setAttribute("src", dataUrl);
+      image.setAttribute("src", dataUrl || BLANK_IMAGE_DATA_URL);
       image.removeAttribute("srcset");
     }),
     ...svgImages.map(async (image) => {
       const href = image.getAttribute("href") || image.getAttributeNS("http://www.w3.org/1999/xlink", "href") || "";
       const dataUrl = await toInlineImageUrl(href);
-      if (!dataUrl) return;
-      image.setAttribute("href", dataUrl);
-      image.setAttributeNS("http://www.w3.org/1999/xlink", "href", dataUrl);
+      image.setAttribute("href", dataUrl || BLANK_IMAGE_DATA_URL);
+      image.setAttributeNS("http://www.w3.org/1999/xlink", "href", dataUrl || BLANK_IMAGE_DATA_URL);
     })
   ]);
 }
