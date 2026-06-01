@@ -4,6 +4,11 @@ import { join, resolve } from "node:path";
 const siliconFlowApiKey = process.env.SILICONFLOW_API_KEY ?? process.env.OPENAI_API_KEY;
 const siliconFlowBaseUrl = process.env.SILICONFLOW_BASE_URL ?? "https://api.siliconflow.cn/v1";
 const siliconFlowModel = process.env.SILICONFLOW_MODEL ?? "Pro/zai-org/GLM-4.7";
+// classify 和 roast 都走轻量 Air：GLM-4.7 在 Vercel 60s 内基本必 504。
+// Air 12B activated 对"三选一"+"短吐槽 JSON"足够。可分别用
+// SILICONFLOW_CLASSIFY_MODEL / SILICONFLOW_ROAST_MODEL 覆盖。
+const siliconFlowClassifyModel = process.env.SILICONFLOW_CLASSIFY_MODEL ?? "zai-org/GLM-4.5-Air";
+const siliconFlowRoastModel = process.env.SILICONFLOW_ROAST_MODEL ?? "zai-org/GLM-4.5-Air";
 const siliconFlowVisionModel = process.env.SILICONFLOW_VISION_MODEL ?? "Pro/moonshotai/Kimi-K2.6";
 const siliconFlowImageEditModel = process.env.SILICONFLOW_IMAGE_EDIT_MODEL ?? "Qwen/Qwen-Image-Edit-2509";
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -61,7 +66,7 @@ export async function handleClassifyLayout(req, res) {
       method: "POST",
       headers: authHeaders(),
       body: JSON.stringify({
-        model: siliconFlowModel,
+        model: siliconFlowClassifyModel,
         messages: [
           { role: "system", content: buildBalancedClassificationPrompt() },
           { role: "user", content: `照片描述：${photoDescription}` }
@@ -125,7 +130,7 @@ export async function handleRoast(req, res) {
       method: "POST",
       headers: authHeaders(),
       body: JSON.stringify({
-        model: siliconFlowModel,
+        model: siliconFlowRoastModel,
         messages: [
           { role: "system", content: buildCurrentRoastPrompt(mode, roastLevel) },
           { role: "user", content: `照片描述：${photoDescription}` }

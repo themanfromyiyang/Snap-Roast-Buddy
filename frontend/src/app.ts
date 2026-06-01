@@ -12,13 +12,12 @@ import {
   type TextGenerationMode
 } from "./sharedProductFlow.js";
 import { updateReceiptPreview } from "./htmlReceiptRenderer.js";
+// 测试台对齐到产品页：打印走 ESP32 HTTP 桥接（HTTPS→HTTP 顶层跳转 + URL hash），
+// 不再用 BLE，所以这里只保留 DOM→ESC/POS 位图的工具函数。
 import {
-  connectPrinter,
-  disconnectPrinter,
-  feedDots,
-  isPrinterConnected,
-  printRasterFromElement,
-  printTestText
+  bytesToBase64,
+  canvasToEscPosRaster,
+  elementToCanvas
 } from "./lib/printer.js";
 
 type RoastApiResponse = {
@@ -102,9 +101,6 @@ const classifyButton = mustQuery<HTMLButtonElement>("#classifyButton");
 const generateButton = mustQuery<HTMLButtonElement>("#generateButton");
 const generateMangaButton = mustQuery<HTMLButtonElement>("#generateMangaButton");
 const testSupabaseButton = mustQuery<HTMLButtonElement>("#testSupabaseButton");
-const connectPrinterButton = mustQuery<HTMLButtonElement>("#connectPrinterButton");
-const feedPrinterButton = mustQuery<HTMLButtonElement>("#feedPrinterButton");
-const testPrintButton = mustQuery<HTMLButtonElement>("#testPrintButton");
 const printCurrentButton = mustQuery<HTMLButtonElement>("#printCurrentButton");
 const examplesEl = mustQuery<HTMLDivElement>("#examples");
 const receiptPaper = mustQuery<HTMLDivElement>("#print-preview");
@@ -177,10 +173,7 @@ classifyButton.addEventListener("click", classifyDescription);
 generateButton.addEventListener("click", generateWithApi);
 generateMangaButton.addEventListener("click", generateMangaStep);
 testSupabaseButton.addEventListener("click", testSupabaseConnection);
-connectPrinterButton.addEventListener("click", togglePrinterConnection);
-feedPrinterButton.addEventListener("click", testPrinterFeed);
-testPrintButton.addEventListener("click", testPrinterText);
-printCurrentButton.addEventListener("click", printCurrentLayout);
+attachPrintButtonHandlers();
 input.addEventListener("input", () => {
   resetGeneratedState();
   window.clearTimeout(inputUpdateTimer);
@@ -400,78 +393,122 @@ async function testSupabaseConnection() {
   }
 }
 
-async function togglePrinterConnection() {
-  if (isPrinterConnected()) {
-    disconnectPrinter();
-    setStepStatus(printerStatus, "未连接", "ready");
-    connectPrinterButton.textContent = "连接打印机";
-    return;
-  }
+// === ESP32 WiFi 打印（位图路径，与 product.ts 对齐） ==================
+// 同 product.ts：DOM → canvas → ESC/POS GS v 0 → base64 → 跳 ESP32 bridge 页
+// （HTTP origin）再同源 POST /print-chunk 分块上传。HTTPS→HTTP 顶层 navigation
+// 浏览器放行；body 不会被 mixed-content 吞掉。
+const ESP32_IP_STORAGE_KEY = "snap_roast_esp32_ip";
+const PRINT_LONG_PRESS_MS = 900;
 
-  setBusy(connectPrinterButton, true, "正在连接");
-  setStepStatus(printerStatus, "正在连接 SnapPrinter-S3。", "loading");
+function getStoredEsp32Ip(): string {
   try {
-    await connectPrinter();
-    setStepStatus(printerStatus, "已连接 SnapPrinter-S3。", "ready");
-    connectPrinterButton.textContent = "断开打印机";
-  } catch (error) {
-    setStepStatus(printerStatus, error instanceof Error ? error.message : "连接失败。", "error");
-    connectPrinterButton.textContent = "连接打印机";
-  } finally {
-    connectPrinterButton.disabled = false;
+    return (localStorage.getItem(ESP32_IP_STORAGE_KEY) ?? "").trim();
+  } catch {
+    return "";
   }
 }
 
-async function testPrinterFeed() {
-  if (!isPrinterConnected()) {
-    setStepStatus(printerStatus, "未连接打印机。", "error");
-    return;
-  }
-  setBusy(feedPrinterButton, true, "发送中");
-  setStepStatus(printerStatus, "正在发送进纸指令。", "loading");
+function setStoredEsp32Ip(ip: string): void {
   try {
-    await feedDots(80);
-    setStepStatus(printerStatus, "测试进纸完成。", "ready");
-  } catch (error) {
-    setStepStatus(printerStatus, error instanceof Error ? error.message : "发送失败。", "error");
-  } finally {
-    setBusy(feedPrinterButton, false, "测试进纸");
+    if (ip) localStorage.setItem(ESP32_IP_STORAGE_KEY, ip);
+    else localStorage.removeItem(ESP32_IP_STORAGE_KEY);
+  } catch {
+    // localStorage 不可用，跳过
   }
 }
 
-async function testPrinterText() {
-  if (!isPrinterConnected()) {
-    setStepStatus(printerStatus, "未连接打印机。", "error");
-    return;
-  }
-  setBusy(testPrintButton, true, "打印中");
-  setStepStatus(printerStatus, "正在打印英文测试文字。", "loading");
-  try {
-    await printTestText();
-    setStepStatus(printerStatus, "测试文字打印完成。", "ready");
-  } catch (error) {
-    setStepStatus(printerStatus, error instanceof Error ? error.message : "打印失败。", "error");
-  } finally {
-    setBusy(testPrintButton, false, "测试文字");
-  }
+function normalizeIp(raw: string): string {
+  return raw.trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
 }
 
-async function printCurrentLayout() {
-  if (!isPrinterConnected()) {
-    setStepStatus(printerStatus, "未连接打印机。", "error");
-    return;
+function askForEsp32Ip(current: string): string {
+  const hint =
+    "请输入 ESP32 的 IP（在 Arduino 串口监视器里能看到，一般是 172.20.10.X）。\n" +
+    "留空可清除已保存的 IP。";
+  const next = window.prompt(hint, current);
+  if (next === null) return current;
+  const normalized = normalizeIp(next);
+  setStoredEsp32Ip(normalized);
+  if (normalized) {
+    setStepStatus(printerStatus, `已保存 ESP32 IP：${normalized}`, "ready");
+  } else {
+    setStepStatus(printerStatus, "已清除 ESP32 IP（长按按钮可重新设置）。", "ready");
   }
+  return normalized;
+}
+
+async function buildRasterBase64(element: HTMLElement): Promise<string> {
+  const canvas = await elementToCanvas(element);
+  const raster = canvasToEscPosRaster(canvas);
+  return bytesToBase64(raster);
+}
+
+function submitRasterToEsp32(ip: string, base64: string): void {
+  // 加 ?t=now 强制浏览器把它当新 URL：否则两次打印同一张小票时 hash 相同，
+  // 顶层 navigation 不会重新加载 bridge 页面，里面的 IIFE 不再触发，body 发空。
+  const encoded = encodeURIComponent(base64);
+  const url = `http://${ip}/print-bridge?t=${Date.now()}#${encoded}`;
+  console.log("[print] 跳转到 bridge:", `http://${ip}/print-bridge?t=…#…`, "base64 长度:", base64.length);
+  window.location.href = url;
+}
+
+async function triggerEsp32Print(): Promise<void> {
+  let ip = getStoredEsp32Ip();
+  if (!ip) ip = askForEsp32Ip("");
+  if (!ip) return;
+
   setBusy(printCurrentButton, true, "打印中");
   setStepStatus(printerStatus, "正在把当前排版转换为 384 点黑白位图。", "loading");
+  let base64: string;
   try {
-    await printRasterFromElement(receiptPaper);
-    setStepStatus(printerStatus, "打印完成。", "ready");
+    base64 = await buildRasterBase64(receiptPaper);
   } catch (error) {
-    setStepStatus(printerStatus, error instanceof Error ? error.message : "打印失败。", "error");
-  } finally {
-    setBusy(printCurrentButton, false, "打印当前排版");
+    setStepStatus(printerStatus, "位图生成失败：" + (error instanceof Error ? error.message : String(error)), "error");
+    setBusy(printCurrentButton, false, "打印当前小票");
+    return;
+  }
+
+  setStepStatus(printerStatus, `已生成 base64（${base64.length} 字符），跳 ESP32 bridge…`, "loading");
+  try {
+    submitRasterToEsp32(ip, base64);
+  } catch (error) {
+    setStepStatus(printerStatus, "跳转 bridge 失败：" + (error instanceof Error ? error.message : String(error)), "error");
+    setBusy(printCurrentButton, false, "打印当前小票");
   }
 }
+
+// 长按设置 IP，短按触发打印；与 product.ts 行为一致
+function attachPrintButtonHandlers(): void {
+  let longPressTimer = 0;
+  let longPressFired = false;
+
+  const startLongPress = () => {
+    longPressFired = false;
+    window.clearTimeout(longPressTimer);
+    longPressTimer = window.setTimeout(() => {
+      longPressFired = true;
+      askForEsp32Ip(getStoredEsp32Ip());
+    }, PRINT_LONG_PRESS_MS);
+  };
+  const cancelLongPress = () => {
+    window.clearTimeout(longPressTimer);
+  };
+
+  printCurrentButton.addEventListener("pointerdown", startLongPress);
+  printCurrentButton.addEventListener("pointerup", cancelLongPress);
+  printCurrentButton.addEventListener("pointerleave", cancelLongPress);
+  printCurrentButton.addEventListener("pointercancel", cancelLongPress);
+
+  printCurrentButton.addEventListener("click", (event) => {
+    if (longPressFired) {
+      event.preventDefault();
+      longPressFired = false;
+      return;
+    }
+    void triggerEsp32Print();
+  });
+}
+// === /ESP32 WiFi 打印 =================================================
 
 function renderLocal() {
   if (mangaMode.value === "standalone" && latestMangaImageUrl) {
@@ -634,7 +671,14 @@ setStepStatus(imageStatus, "请选择示例图或上传图片。", "ready");
 setStepStatus(classificationStatus, "等待三分类。", "ready");
 setStepStatus(mangaStatus, "漫画会直接由图片生成白底黑线结果，再按设置插入小票。", "ready");
 setStepStatus(supabaseStatus, "等待检测 Supabase。", "ready");
-setStepStatus(printerStatus, "未连接", "ready");
+{
+  const savedIp = getStoredEsp32Ip();
+  setStepStatus(
+    printerStatus,
+    savedIp ? `已保存 ESP32 IP：${savedIp}（长按按钮可修改）` : "未设置 ESP32 IP（长按按钮可设置）",
+    "ready"
+  );
+}
 setStatus("API 就绪。可以从图片分析开始，也可以直接编辑文字生成。", "ready");
 renderClassification();
 renderWorkflow();
