@@ -226,6 +226,60 @@ static void handleCaptiveRedirect() {
   server.send(302, "text/plain", "");
 }
 
+// 用 NVS 里保存的账密尝试 STA 连接，timeoutMs 内成功返回 true
+static bool tryConnectSavedWiFi(uint32_t timeoutMs) {
+  String s = loadSavedSsid();
+  String p = loadSavedPass();
+  if (s.length() == 0) return false;
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(s.c_str(), p.c_str());
+  Serial.print("尝试连接 ");
+  Serial.print(s);
+  Serial.print(" ");
+  uint32_t start = millis();
+  while (WiFi.status() != WL_CONNECTED) {
+    if (millis() - start > timeoutMs) {
+      Serial.println(" 超时");
+      WiFi.disconnect(true);
+      return false;
+    }
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println();
+  Serial.print("已连接！ESP32 IP: ");
+  Serial.println(WiFi.localIP());
+  return true;
+}
+
+// STA 模式下注册全部打印路由 + 初始化 MQTT
+static void enterStaMode() {
+  inApMode = false;
+
+  server.on("/",      HTTP_GET,     handleRoot);
+  server.on("/ping",  HTTP_GET,     handlePing);
+  server.on("/print", HTTP_GET,     handlePrintGet);
+  server.on("/print", HTTP_POST,    handlePrintPost);
+  server.on("/print", HTTP_OPTIONS, handleOptions);
+  server.on("/print-raster", HTTP_POST,    handlePrintRaster);
+  server.on("/print-raster", HTTP_OPTIONS, handleOptions);
+  server.on("/print-chunk",  HTTP_POST,    handlePrintChunk);
+  server.on("/print-chunk",  HTTP_OPTIONS, handleOptions);
+  server.on("/print-bridge", HTTP_GET,     handlePrintBridge);
+  server.onNotFound([]() {
+    sendCors();
+    server.send(404, "text/plain", "Not found");
+  });
+  server.begin();
+  Serial.println("HTTP server 已启动 (端口 80)");
+  Serial.println("浏览器访问: http://" + WiFi.localIP().toString() + "/");
+
+  mqttNet.setInsecure();
+  mqtt.setServer(MQTT_HOST, MQTT_PORT);
+  Serial.println("MQTT 客户端已初始化, topic=" + String(MQTT_TOPIC));
+}
+
 static void enterApMode() {
   inApMode = true;
   Serial.println("==== 进入 AP 配网模式 ====");
