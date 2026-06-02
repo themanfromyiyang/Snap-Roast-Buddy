@@ -114,9 +114,9 @@ static void handleConfigRoot() {
   html += "#status{margin-top:12px;font-size:13px;color:#06a}#status.err{color:#c00}";
   html += "</style></head><body>";
   html += "<h1>Snap Roast Buddy · 配置 WiFi</h1>";
-  html += "<div class=\"panel\"><div>启动时扫描到的 WiFi（点击选择）：</div>";
+  html += "<div class=\"panel\"><div>附近的 WiFi（点击选择）：</div>";
   html += "<div id=\"list\" class=\"list\"><div class=\"muted\" style=\"padding:12px\">加载中...</div></div>";
-  html += "<button class=\"secondary\" onclick=\"loadScan()\">刷新列表</button></div>";
+  html += "<button class=\"secondary\" onclick=\"loadScan(true)\">重新扫描</button></div>";
   html += "<div class=\"panel\">";
   html += "<label>已选 SSID</label><input id=\"ssid\" placeholder=\"点上面列表，或手动输入\">";
   html += "<label>密码</label><input id=\"pass\" type=\"password\" placeholder=\"WiFi 密码\">";
@@ -124,9 +124,9 @@ static void handleConfigRoot() {
   html += "<div id=\"status\"></div></div>";
   html += "<script>";
   html += "const $=(id)=>document.getElementById(id);";
-  html += "async function loadScan(){const l=$('list');l.innerHTML='<div class=\"muted\" style=\"padding:12px\">加载中...</div>';";
-  html += "try{const r=await fetch('/scan');const arr=await r.json();";
-  html += "if(!arr.length){l.innerHTML='<div class=\"muted\" style=\"padding:12px\">未扫描到 WiFi</div>';return;}";
+  html += "async function loadScan(fresh=false){const l=$('list');l.innerHTML='<div class=\"muted\" style=\"padding:12px\">'+(fresh?'扫描中...':'加载中...')+'</div>';";
+  html += "try{const r=await fetch(fresh?'/scan?fresh=1':'/scan');const arr=await r.json();";
+  html += "if(!arr.length){l.innerHTML='<div class=\"muted\" style=\"padding:12px\">未扫描到 WiFi，可手动输入 SSID</div>';return;}";
   html += "l.innerHTML='';arr.forEach(n=>{const d=document.createElement('div');d.className='item';";
   html += "d.innerHTML='<span>📶 '+n.ssid.replace(/</g,'&lt;')+'</span><span class=\"rssi\">'+n.rssi+' dBm</span>';";
   html += "d.onclick=()=>{document.querySelectorAll('.item').forEach(x=>x.classList.remove('sel'));d.classList.add('sel');$('ssid').value=n.ssid;$('pass').focus();};";
@@ -147,9 +147,9 @@ static void handleConfigRoot() {
 // 扫描周围 WiFi，缓存 JSON 数组 [{ssid,rssi}]，按 RSSI 降序去重。
 // 注意：SoftAP 已经有手机连接时再 scan，部分手机会把配网热点判定为掉线。
 static void rebuildScanCache() {
-  Serial.println("AP 启动前扫描附近 WiFi...");
+  Serial.println("扫描附近 WiFi...");
   int n = WiFi.scanNetworks(/*async=*/false, /*show_hidden=*/false);
-  Serial.printf("预扫描扫到 %d 个网络\n", n);
+  Serial.printf("扫描扫到 %d 个网络\n", n);
 
   // 按 RSSI 降序排序索引，n 通常 < 30，插入排序足够。
   // 同 SSID 取最强信号那一条（排序后遇到重复 SSID 必然更弱，直接跳过）。
@@ -199,9 +199,16 @@ static void rebuildScanCache() {
   scanCacheBuiltMs = millis();
 }
 
-// AP 模式下只返回启动前缓存，避免边开热点边扫描导致手机掉线
+// 默认返回缓存；用户点"重新扫描"时才 fresh 扫描，避免页面加载就把 AP 扫断
 static void handleScan() {
   sendCors();
+  bool fresh = server.hasArg("fresh") && server.arg("fresh") == "1";
+  if (fresh) {
+    Serial.println("/scan fresh=1，临时扫描附近 WiFi...");
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.softAP(AP_SSID);
+    rebuildScanCache();
+  }
   Serial.printf("/scan 返回缓存，长度=%d, age=%lu ms\n",
                 scanCacheJson.length(),
                 (unsigned long)(millis() - scanCacheBuiltMs));
