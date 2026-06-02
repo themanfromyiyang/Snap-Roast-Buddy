@@ -890,7 +890,7 @@ async function exportCurrentPrintCommand(): Promise<void> {
     window.alert(error instanceof Error ? error.message : "导出打印指令失败。");
   } finally {
     exportPrintCommandButton.textContent = previousLabel;
-    exportPrintCommandButton.disabled = !hasExportableTicket(records[currentRecordIndex]);
+    updateResultActionButtons();
   }
 }
 
@@ -1088,23 +1088,16 @@ function renderCurrentRecord() {
     recordTime.textContent = "暂无照片";
     recordMode.textContent = "等待生成";
     recordCounter.textContent = "0 / 0";
-    regenerateButton.disabled = true;
-    deleteRecordButton.disabled = true;
-    printButton.disabled = true;
-    exportPrintCommandButton.disabled = true;
+    updateResultActionButtons(undefined);
     fixedPrinterSlot.hidden = true;
     renderAlbumSlides();
     resultScroller.scrollTop = 0;
     return;
   }
 
-if (hydratedRecord) resultOriginalImage.src = hydratedRecord.originalImageUrl;
+  if (hydratedRecord) resultOriginalImage.src = hydratedRecord.originalImageUrl;
 
-regenerateButton.disabled = !hydratedRecord;
-deleteRecordButton.disabled = !record;
-const printableRecord = hydratedRecord ?? record;
-printButton.disabled = !hasExportableTicket(printableRecord);
-exportPrintCommandButton.disabled = !hasExportableTicket(printableRecord);
+  updateResultActionButtons(record);
   fixedPrinterSlot.hidden = false;
   updateResultMeta(hydratedRecord ?? record);
   renderAlbumSlides();
@@ -1124,6 +1117,16 @@ function updateResultMeta(record: PhotoRecord | undefined) {
     recordMode.textContent = "加载中";
   }
   recordCounter.textContent = `${Math.min(currentRecordIndex + 1, Math.max(records.length, 1))} / ${productRecordsTotal || records.length}`;
+  updateResultActionButtons(record);
+}
+
+function updateResultActionButtons(record: PhotoRecord | undefined = records[currentRecordIndex]) {
+  const hydratedRecord = isHydratedRecord(record) ? record : undefined;
+  const hasTicket = hasExportableTicket(record);
+  regenerateButton.disabled = !hydratedRecord;
+  deleteRecordButton.disabled = !record;
+  printButton.disabled = !hasTicket;
+  exportPrintCommandButton.disabled = !hasTicket;
 }
 
 function renderAlbumSlides() {
