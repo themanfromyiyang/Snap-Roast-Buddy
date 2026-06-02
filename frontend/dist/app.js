@@ -2043,7 +2043,7 @@ function escape(value) {
 var SERVICE_UUID = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E".toLowerCase();
 var RX_CHAR_UUID = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E".toLowerCase();
 var PRINT_WIDTH_DOTS = 384;
-var RASTER_BAND_HEIGHT_DOTS = 64;
+var RASTER_BAND_HEIGHT_DOTS = 8;
 var BLANK_IMAGE_DATA_URL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 function canvasToEscPosRaster(canvas, threshold = 128) {
   const scale = PRINT_WIDTH_DOTS / canvas.width;

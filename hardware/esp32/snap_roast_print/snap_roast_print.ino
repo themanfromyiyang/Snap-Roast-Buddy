@@ -63,6 +63,8 @@ static const char* AP_SSID = "SnapRoast-Setup";
 #define DTR_PIN              41
 #define DTR_BUSY_LEVEL       HIGH
 #define DTR_WAIT_TIMEOUT_MS  500
+#define PRINTER_FLUSH_EVERY_BYTES 16
+#define PRINTER_FLUSH_DELAY_MS    8
 
 static uint32_t dtrTimeoutCount = 0;
 
@@ -302,13 +304,14 @@ static void enterStaMode() {
   server.on("/print", HTTP_GET,     handlePrintGet);
   server.on("/print", HTTP_POST,    handlePrintPost);
   server.on("/print", HTTP_OPTIONS, handleOptions);
-  server.on("/print-raster", HTTP_POST,    handlePrintRaster);
-  server.on("/print-raster", HTTP_OPTIONS, handleOptions);
   server.on("/print-chunk",  HTTP_POST,    handlePrintChunk);
   server.on("/print-chunk",  HTTP_OPTIONS, handleOptions);
   server.on("/print-bridge", HTTP_GET,     handlePrintBridge);
   server.on("/printer-self-test", HTTP_GET, handlePrinterSelfTest);
   server.on("/printer-dtr", HTTP_GET, handlePrinterDtr);
+  server.on("/printer-long-text", HTTP_GET, handlePrinterLongText);
+  server.on("/printer-raster-test", HTTP_GET, handlePrinterRasterTest);
+  server.on("/printer-feed-test", HTTP_GET, handlePrinterFeedTest);
   server.onNotFound([]() {
     sendCors();
     server.send(404, "text/plain", "Not found");
@@ -387,6 +390,13 @@ static inline void printerWrite(uint8_t byte) {
 static void printerInit() {
   printerWrite(0x1B);
   printerWrite(0x40);
+  // ESC 7 n1 n2 n3: max heat dots, heat time, heat interval.
+  // Keep raster printing gentler than the printer's high-density self-test defaults.
+  printerWrite(0x1B);
+  printerWrite(0x37);
+  printerWrite(0x07);  // 64 max heat dots
+  printerWrite(0x50);  // 800 us heat time
+  printerWrite(0x08);  // 80 us interval
   delay(50);
 }
 
@@ -399,6 +409,40 @@ static void printerFinish() {
   printerWrite(0x1B);
   printerWrite(0x6D);
   Printer.flush();
+}
+
+static void printerWriteAsciiSlow(const char* text) {
+  size_t sent = 0;
+  for (const char* p = text; *p; p++) {
+    printerWrite((uint8_t)*p);
+    sent++;
+    if (sent % PRINTER_FLUSH_EVERY_BYTES == 0) {
+      Printer.flush();
+      delay(PRINTER_FLUSH_DELAY_MS);
+    }
+  }
+  Printer.flush();
+}
+
+static void printerWriteRasterBand(uint8_t height, uint8_t pattern) {
+  const uint8_t widthBytes = 48;  // 384 dots / 8
+  printerWrite(0x1D);
+  printerWrite(0x76);
+  printerWrite(0x30);
+  printerWrite(0x00);
+  printerWrite(widthBytes);
+  printerWrite(0x00);
+  printerWrite(height);
+  printerWrite(0x00);
+  for (uint8_t y = 0; y < height; y++) {
+    for (uint8_t x = 0; x < widthBytes; x++) {
+      uint8_t value = pattern;
+      if (pattern == 0xAA) value = ((x + y) % 2 == 0) ? 0xAA : 0x55;
+      printerWrite(value);
+    }
+    Printer.flush();
+    delay(PRINTER_FLUSH_DELAY_MS);
+  }
 }
 
 static void sendCors() {
@@ -421,12 +465,27 @@ static void handleRoot() {
   html += "<p>RSSI: " + String(WiFi.RSSI()) + " dBm</p>";
   html += "<p>GET  /print?text=...    （给 HTTPS 页面顶层跳转用）</p>";
   html += "<p>POST /print  body=text/plain  （给本地 HTTP 页面 fetch 用）</p>";
+  html += "<p><a href=\"/printer-dtr\">DTR status</a></p>";
+  html += "<p><a href=\"/printer-self-test\">Printer self-test</a></p>";
+  html += "<p><a href=\"/printer-long-text\">Long text test</a></p>";
+  html += "<p><a href=\"/printer-raster-test\">Raster test</a></p>";
+  html += "<p><a href=\"/printer-feed-test\">Feed test</a></p>";
   server.send(200, "text/html; charset=utf-8", html);
 }
 
 static void handlePing() {
   sendCors();
   server.send(200, "text/plain", "pong");
+}
+
+static void sendSimpleHtml(const String& title, const String& body) {
+  String html;
+  html.reserve(title.length() + body.length() + 96);
+  html += "<!doctype html><meta charset=utf-8><h1>";
+  html += title;
+  html += "</h1>";
+  html += body;
+  server.send(200, "text/html; charset=utf-8", html);
 }
 
 static void handlePrinterDtr() {
@@ -466,10 +525,57 @@ static void handlePrinterSelfTest() {
   printerWrite(0x54);
   Printer.flush();
 
-  server.send(200, "text/html; charset=utf-8",
-              "<!doctype html><meta charset=utf-8><h1>已发送打印机自测命令</h1>"
-              "<p>如果打印机无反应，请检查 TX/RX、波特率、电平接口和供电。</p>"
-              "<p><a href=\"/printer-dtr\">查看 DTR 状态</a></p>");
+  sendSimpleHtml("已发送打印机自测命令",
+                 "<p>如果打印机无反应，请检查 TX/RX、波特率、电平接口和供电。</p>"
+                 "<p><a href=\"/printer-dtr\">查看 DTR 状态</a></p>");
+}
+
+static void handlePrinterLongText() {
+  sendCors();
+  Serial.println("==== printer long text test ====");
+  printerInit();
+  printerWriteAsciiSlow("SNAP ROAST UART LONG TEXT TEST\r\n");
+  printerWriteAsciiSlow("baud=115200 rx=1 tx=2 dtr=41\r\n");
+  printerWriteAsciiSlow("--------------------------------\r\n");
+  for (int i = 0; i < 24; i++) {
+    char line[96];
+    snprintf(line, sizeof(line), "%02d ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789 -- uart pacing check\r\n", i + 1);
+    printerWriteAsciiSlow(line);
+  }
+  printerFinish();
+  sendSimpleHtml("已发送长文本测试", "<p>如果这张也断行/乱码，就是 ESP32 到打印机的串口流控或供电问题。</p>");
+}
+
+static void handlePrinterRasterTest() {
+  sendCors();
+  Serial.println("==== printer raster test ====");
+  printerInit();
+  printerWriteAsciiSlow("RASTER TEST 384 DOTS\r\n");
+  printerWriteRasterBand(16, 0x00);
+  printerWriteRasterBand(4, 0xFF);
+  printerWriteRasterBand(8, 0x00);
+  printerWriteRasterBand(24, 0xAA);
+  printerWriteRasterBand(8, 0x00);
+  printerWriteRasterBand(4, 0xFF);
+  printerFinish();
+  sendSimpleHtml("已发送位图测试", "<p>如果长文本正常但这张位图异常，就是 GS v 0 位图节奏/格式问题。</p>");
+}
+
+static void handlePrinterFeedTest() {
+  sendCors();
+  Serial.println("==== printer feed test ====");
+  printerInit();
+  printerWriteAsciiSlow("FEED TEST START\r\n");
+  for (int i = 0; i < 4; i++) {
+    printerWrite(0x1B);
+    printerWrite(0x4A);
+    printerWrite(200);
+    Printer.flush();
+    delay(100);
+  }
+  printerWriteAsciiSlow("FEED TEST END\r\n");
+  printerFinish();
+  sendSimpleHtml("已发送走纸测试", "<p>如果仍然只走很短一段，优先检查标签/黑标模式或纸张传感器。</p>");
 }
 
 static String htmlEscape(const String& s) {
@@ -575,8 +681,13 @@ static size_t streamBase64ToPrinter(const String& b64) {
       uint8_t byte = (uint8_t)((buf >> bits) & 0xFF);
       printerWrite(byte);
       outBytes++;
+      if (outBytes % PRINTER_FLUSH_EVERY_BYTES == 0) {
+        Printer.flush();
+        delay(PRINTER_FLUSH_DELAY_MS);
+      }
     }
   }
+  Printer.flush();
   return outBytes;
 }
 
@@ -605,7 +716,7 @@ static void handlePrintBridge() {
   // ESP32 WebServer 单次 POST body 在 60KB+ 不可靠（readBytes 1s 超时 + 内部
   // String 反复 realloc 撞 heap 碎片）。改成分块串行上传：每块 3000 字符（4 的
   // 倍数 → base64 6-bit 单元不会被切断），每块 ~4.5KB urlencoded，远低于库限制。
-  html += "const CHUNK=3000;";
+  html += "const CHUNK=768;";
   html += "const total=Math.ceil(b64.length/CHUNK);";
   html += "s.textContent='hash='+raw.length+' b64='+b64.length+' 分'+total+'块发送…';";
   html += "for(let i=0;i<total;i++){";
@@ -618,6 +729,7 @@ static void handlePrintBridge() {
   html += "if(!r.ok){s.innerHTML='块 '+i+'/'+total+' 失败 HTTP '+r.status+': '+t.replace(/<[^>]+>/g,'').slice(0,300);s.classList.add('err');return;}";
   // 最后一块返回完整 HTML，覆盖整页
   html += "if(i===total-1){document.open();document.write(t);document.close();return;}";
+  html += "await new Promise(r=>setTimeout(r,40));";
   html += "}catch(e){s.innerHTML='块 '+i+'/'+total+' 出错: '+e.message;s.classList.add('err');return;}";
   html += "}";
   html += "})();";
