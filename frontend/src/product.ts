@@ -64,6 +64,7 @@ type DoodleResponse = {
   imageDataUrl?: string;
   imageUrl?: string;
   imageBase64?: string;
+  persistenceWarning?: boolean;
   error?: string;
   detail?: string;
 };
@@ -850,7 +851,7 @@ async function generateSketch(imageUrl: string): Promise<string> {
   const payload = await postJson<DoodleResponse>("/api/generate-doodle", { imageDataUrl: imageUrl });
   const result = payload.imageDataUrl || payload.imageUrl || (payload.imageBase64 ? `data:image/png;base64,${payload.imageBase64}` : "");
   if (!result) throw new Error("漫画模型没有返回图片。");
-  return result;
+  return (await inlineReceiptImageUrl(result)) || result;
 }
 
 // === ESP32 WiFi 打印（位图路径）======================================
@@ -1631,16 +1632,60 @@ async function ensureProductRecordsLoaded() {
 }
 
 async function saveProductRecord(record: PhotoRecord): Promise<PhotoRecord> {
+  const recordToSave = await normalizeRecordForStorage(record);
   try {
-    const payload = await postJson<ProductRecordsResponse>("/api/product-records", { record });
-    const savedRecord = payload.record ?? record;
+    const payload = await postJson<ProductRecordsResponse>("/api/product-records", { record: recordToSave });
+    const savedRecord = payload.record ?? recordToSave;
     await upsertCachedProductRecord(savedRecord);
     return savedRecord;
   } catch {
     usingLocalRecordStore = true;
-    await upsertCachedProductRecord(record);
-    return record;
+    await upsertCachedProductRecord(recordToSave);
+    return recordToSave;
   }
+}
+
+async function normalizeRecordForStorage(record: PhotoRecord): Promise<PhotoRecord> {
+  if (!record.sketchImageUrl || record.sketchImageUrl.startsWith("data:")) return record;
+  const sketchImageUrl = await inlineReceiptImageUrl(record.sketchImageUrl);
+  return sketchImageUrl ? { ...record, sketchImageUrl } : record;
+}
+
+async function inlineReceiptImageUrl(src: string): Promise<string> {
+  if (!src) return "";
+  if (src.startsWith("data:")) return src;
+
+  let absoluteUrl = "";
+  try {
+    absoluteUrl = new URL(src, document.baseURI).href;
+  } catch {
+    return "";
+  }
+
+  try {
+    const response = await fetch(absoluteUrl, { mode: "cors", credentials: "omit" });
+    if (response.ok) return await blobToDataUrl(await response.blob());
+  } catch {
+    // Fall through to the same-origin proxy.
+  }
+
+  try {
+    const response = await fetch(`/api/inline-image?url=${encodeURIComponent(absoluteUrl)}`, { credentials: "same-origin" });
+    if (response.ok) return await blobToDataUrl(await response.blob());
+  } catch {
+    // Keep the displayable remote URL if inlining is not possible.
+  }
+
+  return "";
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(String(reader.result || "")));
+    reader.addEventListener("error", () => reject(reader.error ?? new Error("Failed to read image.")));
+    reader.readAsDataURL(blob);
+  });
 }
 
 async function deleteProductRecord(id: string): Promise<void> {

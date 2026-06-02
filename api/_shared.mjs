@@ -65,17 +65,17 @@ export async function handleInlineImage(req, res) {
       return;
     }
 
-    const contentType = response.headers.get("content-type") || "image/png";
-    if (!contentType.startsWith("image/")) {
-      res.statusCode = 415;
-      res.end("Unsupported image type.");
-      return;
-    }
-
     const arrayBuffer = await response.arrayBuffer();
     if (arrayBuffer.byteLength > 8 * 1024 * 1024) {
       res.statusCode = 413;
       res.end("Image too large.");
+      return;
+    }
+
+    const contentType = normalizeImageContentType(response.headers.get("content-type"), arrayBuffer);
+    if (!contentType) {
+      res.statusCode = 415;
+      res.end("Unsupported image type.");
       return;
     }
 
@@ -594,12 +594,17 @@ function extractGeneratedImage(data) {
 async function downloadImageAsDataUrl(imageUrl) {
   if (!imageUrl || !String(imageUrl).startsWith("http")) return "";
   try {
-    const response = await fetch(imageUrl);
+    const response = await fetch(imageUrl, {
+      headers: {
+        accept: "image/avif,image/webp,image/png,image/jpeg,image/*,*/*;q=0.8",
+        "user-agent": "Snap-Roast-Buddy/1.0"
+      }
+    });
     if (!response.ok) return "";
-    const contentType = response.headers.get("content-type") || "image/png";
-    if (!contentType.startsWith("image/")) return "";
     const arrayBuffer = await response.arrayBuffer();
     if (arrayBuffer.byteLength > 8 * 1024 * 1024) return "";
+    const contentType = normalizeImageContentType(response.headers.get("content-type"), arrayBuffer);
+    if (!contentType) return "";
     const base64 = Buffer.from(arrayBuffer).toString("base64");
     return `data:${contentType};base64,${base64}`;
   } catch {
@@ -610,13 +615,42 @@ async function downloadImageAsDataUrl(imageUrl) {
 async function fetchExternalImage(initialUrl) {
   let url = initialUrl;
   for (let redirects = 0; redirects <= 4; redirects += 1) {
-    const response = await fetch(url, { redirect: "manual" });
+    const response = await fetch(url, {
+      redirect: "manual",
+      headers: {
+        accept: "image/avif,image/webp,image/png,image/jpeg,image/*,*/*;q=0.8",
+        "user-agent": "Snap-Roast-Buddy/1.0"
+      }
+    });
     if (response.status < 300 || response.status >= 400) return response;
     const location = response.headers.get("location");
     if (!location) return response;
     url = validateExternalImageUrl(new URL(location, url).href);
   }
   throw Object.assign(new Error("Too many image redirects."), { statusCode: 400 });
+}
+
+function normalizeImageContentType(rawContentType, arrayBuffer) {
+  const headerType = String(rawContentType || "").split(";")[0].trim().toLowerCase();
+  if (headerType.startsWith("image/")) return headerType;
+
+  const bytes = new Uint8Array(arrayBuffer.slice(0, 12));
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return "image/png";
+  if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return "image/gif";
+  if (
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
+  ) {
+    return "image/webp";
+  }
+  return "";
 }
 
 function validateExternalImageUrl(rawUrl) {
