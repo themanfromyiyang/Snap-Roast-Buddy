@@ -1774,15 +1774,15 @@ pre {
   --camera-mirror-scale: 1;
   position: absolute;
   top: var(--camera-viewfinder-offset);
-  right: 0;
+  right: auto;
   bottom: auto;
-  left: 0;
+  left: 50%;
   display: grid;
   place-items: center;
   width: 100%;
   aspect-ratio: 3 / 4;
   max-height: calc(100dvh - var(--camera-viewfinder-offset) - max(12px, env(safe-area-inset-bottom)) - var(--camera-bottom-extra) - 136px);
-  transform: none;
+  transform: translateX(-50%);
   overflow: hidden;
   border: 0;
   border-radius: 0;
