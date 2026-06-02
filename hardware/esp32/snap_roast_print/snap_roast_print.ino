@@ -53,6 +53,8 @@ static const uint32_t STA_RECONNECT_INTERVAL_MS = 5000;
 static uint32_t staLastReconnectTryMs = 0;
 static wl_status_t staLastStatus = WL_IDLE_STATUS;
 static const char* AP_SSID = "SnapRoast-Setup";
+static String scanCacheJson = "[]";
+static uint32_t scanCacheBuiltMs = 0;
 
 // 打印机 DTR 已接 ESP32 GPIO41（硬件流控）。
 // 常见 ESC/POS 约定 LOW = READY，HIGH = BUSY；如果实测一直卡 BUSY，再把 DTR_BUSY_LEVEL 改成 LOW。
@@ -112,9 +114,9 @@ static void handleConfigRoot() {
   html += "#status{margin-top:12px;font-size:13px;color:#06a}#status.err{color:#c00}";
   html += "</style></head><body>";
   html += "<h1>Snap Roast Buddy · 配置 WiFi</h1>";
-  html += "<div class=\"panel\"><div>附近的 WiFi（点击选择）：</div>";
-  html += "<div id=\"list\" class=\"list\"><div class=\"muted\" style=\"padding:12px\">扫描中...</div></div>";
-  html += "<button class=\"secondary\" onclick=\"loadScan()\">🔄 重新扫描</button></div>";
+  html += "<div class=\"panel\"><div>启动时扫描到的 WiFi（点击选择）：</div>";
+  html += "<div id=\"list\" class=\"list\"><div class=\"muted\" style=\"padding:12px\">加载中...</div></div>";
+  html += "<button class=\"secondary\" onclick=\"loadScan()\">刷新列表</button></div>";
   html += "<div class=\"panel\">";
   html += "<label>已选 SSID</label><input id=\"ssid\" placeholder=\"点上面列表，或手动输入\">";
   html += "<label>密码</label><input id=\"pass\" type=\"password\" placeholder=\"WiFi 密码\">";
@@ -122,7 +124,7 @@ static void handleConfigRoot() {
   html += "<div id=\"status\"></div></div>";
   html += "<script>";
   html += "const $=(id)=>document.getElementById(id);";
-  html += "async function loadScan(){const l=$('list');l.innerHTML='<div class=\"muted\" style=\"padding:12px\">扫描中...</div>';";
+  html += "async function loadScan(){const l=$('list');l.innerHTML='<div class=\"muted\" style=\"padding:12px\">加载中...</div>';";
   html += "try{const r=await fetch('/scan');const arr=await r.json();";
   html += "if(!arr.length){l.innerHTML='<div class=\"muted\" style=\"padding:12px\">未扫描到 WiFi</div>';return;}";
   html += "l.innerHTML='';arr.forEach(n=>{const d=document.createElement('div');d.className='item';";
@@ -142,12 +144,12 @@ static void handleConfigRoot() {
   server.send(200, "text/html; charset=utf-8", html);
 }
 
-// 扫描周围 WiFi，返回 JSON 数组 [{ssid,rssi}]，按 RSSI 降序去重
-static void handleScan() {
-  sendCors();
-  Serial.println("/scan 开始扫描...");
+// 扫描周围 WiFi，缓存 JSON 数组 [{ssid,rssi}]，按 RSSI 降序去重。
+// 注意：SoftAP 已经有手机连接时再 scan，部分手机会把配网热点判定为掉线。
+static void rebuildScanCache() {
+  Serial.println("AP 启动前扫描附近 WiFi...");
   int n = WiFi.scanNetworks(/*async=*/false, /*show_hidden=*/false);
-  Serial.printf("/scan 扫到 %d 个网络\n", n);
+  Serial.printf("预扫描扫到 %d 个网络\n", n);
 
   // 按 RSSI 降序排序索引，n 通常 < 30，插入排序足够。
   // 同 SSID 取最强信号那一条（排序后遇到重复 SSID 必然更弱，直接跳过）。
@@ -193,7 +195,17 @@ static void handleScan() {
   }
   resp += "]";
   WiFi.scanDelete();
-  server.send(200, "application/json", resp);
+  scanCacheJson = resp;
+  scanCacheBuiltMs = millis();
+}
+
+// AP 模式下只返回启动前缓存，避免边开热点边扫描导致手机掉线
+static void handleScan() {
+  sendCors();
+  Serial.printf("/scan 返回缓存，长度=%d, age=%lu ms\n",
+                scanCacheJson.length(),
+                (unsigned long)(millis() - scanCacheBuiltMs));
+  server.send(200, "application/json", scanCacheJson);
 }
 
 // 解析 POST body JSON {"ssid":"...","pass":"..."}，写 NVS 后 1.5s 重启。
@@ -250,8 +262,8 @@ static void handleCaptiveRedirect() {
   server.send(302, "text/plain", "");
 }
 
-// 用 NVS 里保存的账密尝试 STA 连接，timeoutMs 内成功返回 true
-static bool startSavedWiFi(bool keepApAlive) {
+// 用 NVS 里保存的账密发起 STA 连接
+static bool startSavedWiFi() {
   String s = loadSavedSsid();
   String p = loadSavedPass();
   if (s.length() == 0) return false;
@@ -259,7 +271,7 @@ static bool startSavedWiFi(bool keepApAlive) {
   WiFi.persistent(false);
   WiFi.setAutoReconnect(true);
   WiFi.setSleep(false);
-  WiFi.mode(keepApAlive ? WIFI_AP_STA : WIFI_STA);
+  WiFi.mode(WIFI_STA);
   WiFi.begin(s.c_str(), p.c_str());
 
   Serial.print("尝试连接保存的 WiFi: ");
@@ -271,7 +283,7 @@ static bool tryConnectSavedWiFi(uint32_t timeoutMs) {
   String s = loadSavedSsid();
   if (s.length() == 0) return false;
 
-  startSavedWiFi(false);
+  startSavedWiFi();
   Serial.print("等待连接 ");
   uint32_t start = millis();
   while (WiFi.status() != WL_CONNECTED) {
@@ -326,7 +338,12 @@ static void enterApMode() {
   inApMode = true;
   Serial.println("==== 进入 AP 配网模式 ====");
 
-  WiFi.mode(WIFI_AP_STA);
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect(false, false);
+  WiFi.setSleep(false);
+  rebuildScanCache();
+
+  WiFi.mode(WIFI_AP);
   WiFi.softAP(AP_SSID);    // 开放无密码
   IPAddress apIp = WiFi.softAPIP();
   Serial.print("AP IP: ");
@@ -343,7 +360,6 @@ static void enterApMode() {
   server.onNotFound(handleCaptiveRedirect);
   server.begin();
   staLastReconnectTryMs = 0;
-  startSavedWiFi(true);
   Serial.println("配网 HTTP server 已启动");
   Serial.println("浏览器访问 http://192.168.4.1/");
 }
@@ -804,24 +820,6 @@ static bool reconnectTimerReady() {
   return true;
 }
 
-static void pollSavedWiFiInApMode() {
-  if (loadSavedSsid().length() == 0) return;
-
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.print("Saved WiFi is back, switching to STA. IP: ");
-    Serial.println(WiFi.localIP());
-    dnsServer.stop();
-    server.stop();
-    enterStaMode();
-    staLastStatus = WL_CONNECTED;
-    return;
-  }
-
-  if (reconnectTimerReady()) {
-    startSavedWiFi(true);
-  }
-}
-
 static void maintainStaWiFi() {
   wl_status_t status = WiFi.status();
   if (status == WL_CONNECTED) {
@@ -840,7 +838,7 @@ static void maintainStaWiFi() {
   staLastStatus = status;
 
   if (reconnectTimerReady()) {
-    startSavedWiFi(false);
+    startSavedWiFi();
   }
 }
 
@@ -928,7 +926,6 @@ void loop() {
   if (inApMode) {
     dnsServer.processNextRequest();
     server.handleClient();
-    pollSavedWiFiInApMode();
     // AP 模式下按钮无功能（长按重置只在 STA 模式有意义；
     // AP 模式本身就是"重置后的状态"，再触发 reset 也是回到这里）
   } else {
