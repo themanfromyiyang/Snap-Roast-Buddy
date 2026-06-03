@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>拍立怼 Snap Roast Buddy 展板</title>
+    <link rel="stylesheet" href="./poster.css" />
+  </head>
+  <body class="poster-body">
+    <div class="poster-toolbar" aria-label="海报工具">
+      <a href="./index.html">返回产品页</a>
+      <button id="clearPosterImages" type="button">清空图片</button>
+      <button id="printPoster" type="button">打印 / 导出 PDF</button>
+    </div>
+
+    <main class="poster-board" aria-label="拍立怼项目展板海报">
+      <section class="poster-hero">
+        <div class="hero-copy">
+          <p class="poster-kicker">SNAP ROAST BUDDY / AI PHOTO RECEIPT</p>
+          <h1>拍立怼</h1>
+          <p class="hero-line">拍一张照，收到一张懂梗、会审片、还能热敏打印的小票。</p>
+        </div>
+
+        <label class="upload-frame hero-frame" data-slot="hero">
+          <input type="file" accept="image/*" />
+          <span class="upload-label">主视觉图片</span>
+          <span class="upload-hint">之后上传产品照 / 场景照</span>
+          <img alt="主视觉预览" hidden />
+        </label>
+      </section>
+
+      <section class="poster-strip">
+        <article>
+          <span>01</span>
+          <h2>产品概念</h2>
+          <p>把“拍照”变成一张可收藏、可分享、可打印的小票事件。</p>
+        </article>
+        <article>
+          <span>02</span>
+          <h2>情绪卖点</h2>
+          <p>不是修图，也不是夸夸，是带分寸的吐槽与现场感。</p>
+        </article>
+        <article>
+          <span>03</span>
+          <h2>展示方式</h2>
+          <p>手机端实时体验 + AI 小票结果 + ESP32 热敏打印装置。</p>
+        </article>
+      </section>
+
+      <section class="poster-grid">
+        <div class="flow-panel">
+          <p class="section-index">FLOW</p>
+          <h2>生成流程</h2>
+          <ol class="flow-list">
+            <li><b>拍照 / 导入</b><span>移动端取景，选择照片进入分析。</span></li>
+            <li><b>AI 审片</b><span>识别画面主体、构图、气质和可吐槽点。</span></li>
+            <li><b>吐槽生成</b><span>按温柔、正常、辛辣、公开处刑等强度生成文案。</span></li>
+            <li><b>小票排版</b><span>输出热敏纸风格版式，支持爆字、表情、漫画贴纸。</span></li>
+            <li><b>实体打印</b><span>转换为 ESC/POS 位图，经 ESP32 发送到 58mm 打印机。</span></li>
+          </ol>
+        </div>
+
+        <div class="image-panel image-panel-phone">
+          <label class="upload-frame" data-slot="phone">
+            <input type="file" accept="image/*" />
+            <span class="upload-label">手机界面截图</span>
+            <span class="upload-hint">相机页 / 生成页 / 结果页</span>
+            <img alt="手机界面预览" hidden />
+          </label>
+        </div>
+
+        <div class="feature-panel">
+          <p class="section-index">FEATURES</p>
+          <h2>核心能力</h2>
+          <ul class="feature-list">
+            <li>实时相机取景与相册导入</li>
+            <li>自动选择小票、爆字、像素表情版式</li>
+            <li>可开关黑白漫画贴纸</li>
+            <li>结果记录、重新生成与 ESP32 打印</li>
+          </ul>
+        </div>
+
+        <div class="image-panel image-panel-ticket">
+          <label class="upload-frame" data-slot="ticket">
+            <input type="file" accept="image/*" />
+            <span class="upload-label">小票样张</span>
+            <span class="upload-hint">上传生成结果 / 打印照片</span>
+            <img alt="小票样张预览" hidden />
+          </label>
+        </div>
+
+        <div class="tech-panel">
+          <p class="section-index">STACK</p>
+          <h2>技术路径</h2>
+          <div class="tech-map">
+            <span>Camera / Upload</span>
+            <span>Vision Analysis</span>
+            <span>Roast Copywriting</span>
+            <span>Layout Skills</span>
+            <span>DOM to Canvas</span>
+            <span>ESP32 Print</span>
+          </div>
+        </div>
+
+        <div class="image-panel image-panel-hardware">
+          <label class="upload-frame" data-slot="hardware">
+            <input type="file" accept="image/*" />
+            <span class="upload-label">硬件 / 现场图片</span>
+            <span class="upload-hint">打印机、ESP32、展台照片</span>
+            <img alt="硬件现场预览" hidden />
+          </label>
+        </div>
+      </section>
+
+      <footer class="poster-footer">
+        <p>Snap Roast Buddy</p>
+        <p>AI Photo Review · Receipt Layout · Thermal Print</p>
+        <p>Web + Layout Skills + ESP32</p>
+      </footer>
+    </main>
+
+    <script src="./poster.js" type="module"></script>
+  </body>
+</html>

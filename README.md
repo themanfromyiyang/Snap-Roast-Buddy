@@ -42,6 +42,7 @@ Snap Roast Buddy（拍立怼）是一个移动端相机式 AI 小票应用。用
 - `frontend/test.html`：工程测试页，可手动输入描述或上传图片测试生成链路。
 - `frontend/debug.html`：Prompt、layout skills、SVG 预览调试面板。
 - `frontend/print-test.html`：热敏打印相关测试页。
+- `frontend/poster.html`：项目展板海报，可点击占位框临时上传主视觉、界面截图、小票样张和硬件现场图片，并支持浏览器打印 / 导出 PDF。
 
 ## 生成流程
 
@@ -85,6 +86,9 @@ frontend/
   test.html               # 工程测试页
   debug.html              # 调试面板
   print-test.html         # 打印测试页
+  poster.html             # 项目展板海报
+  poster.css
+  poster.js
   styles.css
   src/app.ts              # 测试页交互
   src/product.ts          # 产品模式交互
@@ -144,6 +148,7 @@ http://localhost:5173/index.html
 http://localhost:5173/test.html
 http://localhost:5173/debug.html
 http://localhost:5173/print-test.html
+http://localhost:5173/poster.html
 ```
 
 ## 环境变量
