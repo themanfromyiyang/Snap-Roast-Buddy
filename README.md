@@ -6,6 +6,7 @@ Snap Roast Buddy（拍立怼）是一个移动端相机式 AI 小票应用。用
 
 当前默认入口是产品模式。访问 `/` 会直接进入 `frontend/index.html`。
 
+<img width="1279" height="704" alt="image" src="https://github.com/user-attachments/assets/ed36a7c8-c7e2-4e45-abad-882685bb0b53" />
 
 https://github.com/user-attachments/assets/95ecd5b5-c50e-44bf-aad5-6770d7ddbce6
 
