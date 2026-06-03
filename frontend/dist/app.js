@@ -2101,16 +2101,15 @@ function concatBytes(...arrays) {
   return result;
 }
 async function elementToCanvas(element) {
-  const existingCanvas = element instanceof HTMLCanvasElement ? element : element.querySelector("canvas");
-  if (existingCanvas) {
+  if (element instanceof HTMLCanvasElement) {
     const copy = document.createElement("canvas");
-    copy.width = existingCanvas.width;
-    copy.height = existingCanvas.height;
+    copy.width = element.width;
+    copy.height = element.height;
     const copyContext = copy.getContext("2d");
     if (!copyContext) throw new Error("\u93C3\u72B3\u7876\u9352\u6D98\u7F13\u68F0\u52EE\uE74D\u93B4\uE044\u6D58\u9422\u8BF2\u7AF7\u9286?");
     copyContext.fillStyle = "#ffffff";
     copyContext.fillRect(0, 0, copy.width, copy.height);
-    copyContext.drawImage(existingCanvas, 0, 0);
+    copyContext.drawImage(element, 0, 0);
     return copy;
   }
   const rect = element.getBoundingClientRect();

@@ -168,16 +168,15 @@ export function concatBytes(...arrays: Uint8Array[]) {
 }
 
 export async function elementToCanvas(element: HTMLElement) {
-  const existingCanvas = element instanceof HTMLCanvasElement ? element : element.querySelector("canvas");
-  if (existingCanvas) {
+  if (element instanceof HTMLCanvasElement) {
     const copy = document.createElement("canvas");
-    copy.width = existingCanvas.width;
-    copy.height = existingCanvas.height;
+    copy.width = element.width;
+    copy.height = element.height;
     const copyContext = copy.getContext("2d");
     if (!copyContext) throw new Error("鏃犳硶鍒涘缓棰勮鎴浘鐢诲竷銆?");
     copyContext.fillStyle = "#ffffff";
     copyContext.fillRect(0, 0, copy.width, copy.height);
-    copyContext.drawImage(existingCanvas, 0, 0);
+    copyContext.drawImage(element, 0, 0);
     return copy;
   }
 
